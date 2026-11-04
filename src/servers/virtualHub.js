@@ -89,6 +89,9 @@ class VirtualFilesystemServer {
 
     switch (name) {
       case 'read_file': {
+        if (!args || typeof args.path !== 'string' || !args.path.trim()) {
+          throw new Error('Parameter "path" is required');
+        }
         const p = normalizePath(args.path);
         if (!this.files.has(p)) {
           throw new Error(`File not found: ${p}`);
@@ -96,12 +99,21 @@ class VirtualFilesystemServer {
         return { content: [{ type: 'text', text: this.files.get(p) }] };
       }
       case 'write_file': {
+        if (!args || typeof args.path !== 'string' || !args.path.trim()) {
+          throw new Error('Parameter "path" is required');
+        }
+        if (args.content === undefined || args.content === null) {
+          throw new Error('Parameter "content" is required');
+        }
         const p = normalizePath(args.path);
-        const content = String(args.content !== undefined ? args.content : '');
+        const content = String(args.content);
         this.files.set(p, content);
         return { content: [{ type: 'text', text: `Successfully wrote ${content.length} bytes to ${p}` }] };
       }
       case 'list_files': {
+        if (!args || typeof args.path !== 'string' || !args.path.trim()) {
+          throw new Error('Parameter "path" is required');
+        }
         const dir = normalizePath(args.path);
         const matches = [];
         for (const key of this.files.keys()) {
@@ -112,6 +124,9 @@ class VirtualFilesystemServer {
         return { content: [{ type: 'text', text: JSON.stringify({ directory: dir, files: matches }, null, 2) }] };
       }
       case 'delete_file': {
+        if (!args || typeof args.path !== 'string' || !args.path.trim()) {
+          throw new Error('Parameter "path" is required');
+        }
         const p = normalizePath(args.path);
         if (!this.files.has(p)) {
           throw new Error(`Cannot delete: file not found: ${p}`);
@@ -120,6 +135,9 @@ class VirtualFilesystemServer {
         return { content: [{ type: 'text', text: `Deleted file ${p}` }] };
       }
       case 'file_stat': {
+        if (!args || typeof args.path !== 'string' || !args.path.trim()) {
+          throw new Error('Parameter "path" is required');
+        }
         const p = normalizePath(args.path);
         if (!this.files.has(p)) {
           throw new Error(`File not found: ${p}`);
@@ -225,8 +243,9 @@ class VirtualMemoryServer {
   async callTool(name, args = {}) {
     switch (name) {
       case 'set_key': {
-        const { key, value, tags = [] } = args;
-        if (!key) throw new Error('Parameter "key" is required');
+        const { key, value, tags = [] } = args || {};
+        if (!key || typeof key !== 'string' || !key.trim()) throw new Error('Parameter "key" is required');
+        if (value === undefined || value === null) throw new Error('Parameter "value" is required');
         this.store.set(String(key), {
           value,
           tags: Array.isArray(tags) ? tags : [String(tags)],
@@ -235,14 +254,20 @@ class VirtualMemoryServer {
         return { content: [{ type: 'text', text: `Key "${key}" successfully saved.` }] };
       }
       case 'get_key': {
-        const key = String(args.key || '');
+        if (!args || !args.key || typeof args.key !== 'string' || !args.key.trim()) {
+          throw new Error('Parameter "key" is required');
+        }
+        const key = String(args.key);
         if (!this.store.has(key)) {
           throw new Error(`Key not found: ${key}`);
         }
         return { content: [{ type: 'text', text: JSON.stringify(this.store.get(key), null, 2) }] };
       }
       case 'search_keys': {
-        const query = String(args.query || '').toLowerCase();
+        if (!args || args.query === undefined || args.query === null || typeof args.query !== 'string') {
+          throw new Error('Parameter "query" is required');
+        }
+        const query = String(args.query).toLowerCase();
         const results = [];
         for (const [k, v] of this.store.entries()) {
           const valStr = JSON.stringify(v.value).toLowerCase();
@@ -254,7 +279,10 @@ class VirtualMemoryServer {
         return { content: [{ type: 'text', text: JSON.stringify({ query, count: results.length, matches: results }, null, 2) }] };
       }
       case 'delete_key': {
-        const key = String(args.key || '');
+        if (!args || !args.key || typeof args.key !== 'string' || !args.key.trim()) {
+          throw new Error('Parameter "key" is required');
+        }
+        const key = String(args.key);
         if (!this.store.has(key)) {
           throw new Error(`Key not found: ${key}`);
         }
@@ -334,19 +362,28 @@ class VirtualCryptoServer {
   async callTool(name, args = {}) {
     switch (name) {
       case 'hash_sha256': {
-        const text = String(args.text !== undefined ? args.text : '');
+        if (!args || args.text === undefined || args.text === null) {
+          throw new Error('Parameter "text" is required');
+        }
+        const text = String(args.text);
         const hash = crypto.createHash('sha256').update(text, 'utf8').digest('hex');
         return { content: [{ type: 'text', text: JSON.stringify({ algorithm: 'SHA-256', inputLength: text.length, hash }, null, 2) }] };
       }
       case 'hmac_sign': {
-        const secret = String(args.secret || '');
-        const message = String(args.message || '');
+        if (!args || !args.secret || typeof args.secret !== 'string') {
+          throw new Error('Parameter "secret" is required');
+        }
+        if (args.message === undefined || args.message === null) {
+          throw new Error('Parameter "message" is required');
+        }
+        const secret = String(args.secret);
+        const message = String(args.message);
         const signature = crypto.createHmac('sha256', secret).update(message, 'utf8').digest('hex');
         return { content: [{ type: 'text', text: JSON.stringify({ algorithm: 'HMAC-SHA256', signature }, null, 2) }] };
       }
       case 'generate_token': {
-        const byteCount = Math.min(Math.max(parseInt(args.bytes, 10) || 32, 8), 128);
-        const format = args.format === 'base64' ? 'base64' : 'hex';
+        const byteCount = Math.min(Math.max(parseInt(args ? args.bytes : 32, 10) || 32, 8), 128);
+        const format = (args && args.format === 'base64') ? 'base64' : 'hex';
         const token = crypto.randomBytes(byteCount).toString(format);
         const entropy = calculateShannonEntropy(token);
         return {
@@ -368,7 +405,10 @@ class VirtualCryptoServer {
         };
       }
       case 'eval_entropy': {
-        const text = String(args.text !== undefined ? args.text : '');
+        if (!args || args.text === undefined || args.text === null) {
+          throw new Error('Parameter "text" is required');
+        }
+        const text = String(args.text);
         const entropy = calculateShannonEntropy(text);
         return {
           content: [
@@ -422,7 +462,10 @@ class VirtualHttpSimulatorServer {
 
   async callTool(name, args = {}) {
     if (name === 'fetch_url') {
-      const url = String(args.url || '');
+      if (!args || !args.url || typeof args.url !== 'string' || !args.url.trim()) {
+        throw new Error('Parameter "url" is required');
+      }
+      const url = String(args.url);
       // Mock endpoints
       if (url.includes('api.github.com/status')) {
         return {

@@ -13,25 +13,31 @@ const { AuditLedger } = require('../src/ledger/auditLedger');
 async function runPipelineTests() {
   console.log('🧪 Testing Visual DAG Pipeline Engine...');
 
-  // 1. Dependency extraction
+  // 1. Dependency extraction (nested, direct, and spaced expressions)
   const sampleParams = {
     key: '{{nodes.step1.output.secret}}',
     nested: { ref: '{{nodes.step2.output.data.hash}}' },
+    direct: '{{nodes.step3}}',
+    spaced: '{{ nodes.step4.output }}',
     normal: 'literal_value'
   };
   const deps = extractDependencies(sampleParams);
-  assert.deepStrictEqual(deps.sort(), ['step1', 'step2']);
+  assert.deepStrictEqual(deps.sort(), ['step1', 'step2', 'step3', 'step4']);
 
   // 2. Value interpolation
   const context = {
     nodes: {
       step1: { output: { secret: 'alpha_key_99' } },
-      step2: { output: { data: { hash: 'e3b0c442' } } }
+      step2: { output: { data: { hash: 'e3b0c442' } } },
+      step3: 'direct_value_3',
+      step4: { output: 'spaced_value_4' }
     }
   };
   const interpolated = interpolateValue(sampleParams, context);
   assert.strictEqual(interpolated.key, 'alpha_key_99');
   assert.strictEqual(interpolated.nested.ref, 'e3b0c442');
+  assert.strictEqual(interpolated.direct, 'direct_value_3');
+  assert.strictEqual(interpolated.spaced, 'spaced_value_4');
   assert.strictEqual(interpolated.normal, 'literal_value');
 
   // 3. Topological sort
@@ -44,12 +50,19 @@ async function runPipelineTests() {
   const sorted = engine.resolveExecutionOrder(nodes);
   assert.deepStrictEqual(sorted.map(n => n.id), ['node_a', 'node_b', 'node_c']);
 
-  // 4. Cycle detection
+  // 4. Cycle detection & Duplicate Node ID validation
   const cyclicNodes = [
     { id: 'cycle_1', params: { in: '{{nodes.cycle_2.output.x}}' } },
     { id: 'cycle_2', params: { in: '{{nodes.cycle_1.output.x}}' } }
   ];
   assert.throws(() => engine.resolveExecutionOrder(cyclicNodes), /Cyclic dependency detected/);
+
+  const duplicateNodes = [
+    { id: 'dup_node', params: {} },
+    { id: 'dup_node', params: {} }
+  ];
+  assert.throws(() => engine.resolveExecutionOrder(duplicateNodes), /Duplicate node ID detected/);
+  assert.throws(() => engine.resolveExecutionOrder('not-an-array'), /Pipeline nodes must be an array/);
 
   // 5. Full End-to-End Pipeline Execution across Virtual MCP Servers
   const hub = new VirtualHub();
@@ -111,7 +124,10 @@ async function runPipelineTests() {
   const fileContent = (await fsServer.callTool('read_file', { path: '/workspace/security_checkpoint.txt' })).content[0].text;
   assert(fileContent.includes(storedEntry.value), 'Filesystem file must contain the generated hash');
 
-  console.log('✅ Visual DAG Pipeline Engine: All 5 test cases passed!');
+  // 6. Invalid pipeline input validation
+  await assert.rejects(() => pipelineEngine.executePipeline({ id: 'invalid-pipeline' }, invoker), /Pipeline definition must contain a "nodes" array/);
+
+  console.log('✅ Visual DAG Pipeline Engine: All 6 test cases passed!');
 }
 
 module.exports = { runPipelineTests };

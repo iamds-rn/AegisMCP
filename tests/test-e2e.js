@@ -122,7 +122,18 @@ async function runE2ETests() {
     assert.strictEqual(fuzzRes.data.toolName, 'hash_sha256');
     assert(['A+', 'A'].includes(fuzzRes.data.grade));
 
-    console.log('✅ End-to-End Protocol & Gateway: All 8 test cases passed!');
+    // 9. Static Asset Path Traversal Immunity Test
+    const traversalRes = await getJson(`${baseUrl}/../../package.json`);
+    const bodyStr = typeof traversalRes.data === 'string' ? traversalRes.data : JSON.stringify(traversalRes.data || traversalRes.raw || '');
+    assert(!bodyStr.includes('"name": "aegis-mcp"'), 'Static file server must NOT leak package.json via path traversal');
+
+    // 10. Tools/call missing name parameter validation
+    const invalidCallReq = createRequest('tools/call', {}, 5);
+    const invalidCallRes = await postJson(`${baseUrl}/rpc`, invalidCallReq);
+    assert(invalidCallRes.data.error, 'Calling tools/call without name must return error');
+    assert.strictEqual(invalidCallRes.data.error.code, -32602, 'Should return -32602 INVALID_PARAMS');
+
+    console.log('✅ End-to-End Protocol & Gateway: All 10 test cases passed!');
   } finally {
     proxy.stop();
   }

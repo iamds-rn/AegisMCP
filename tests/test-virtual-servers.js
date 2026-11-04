@@ -61,6 +61,28 @@ async function runVirtualServerTests() {
   const ghStatus = JSON.parse((await httpSim.callTool('fetch_url', { url: 'https://api.github.com/status' })).content[0].text);
   assert(ghStatus.status.includes('operational'));
 
+  // 5. Strict Parameter Validation Invariant Tests
+  console.log('  Testing server parameter validation invariants...');
+  await assert.rejects(() => fs.callTool('read_file', {}), /Parameter "path" is required/);
+  await assert.rejects(() => fs.callTool('write_file', {}), /Parameter "path" is required/);
+  await assert.rejects(() => fs.callTool('write_file', { path: '/workspace/test.txt' }), /Parameter "content" is required/);
+  await assert.rejects(() => fs.callTool('delete_file', {}), /Parameter "path" is required/);
+  await assert.rejects(() => fs.callTool('file_stat', {}), /Parameter "path" is required/);
+  await assert.rejects(() => fs.callTool('list_files', {}), /Parameter "path" is required/);
+
+  await assert.rejects(() => mem.callTool('set_key', {}), /Parameter "key" is required/);
+  await assert.rejects(() => mem.callTool('set_key', { key: 'sample' }), /Parameter "value" is required/);
+  await assert.rejects(() => mem.callTool('get_key', {}), /Parameter "key" is required/);
+  await assert.rejects(() => mem.callTool('delete_key', {}), /Parameter "key" is required/);
+  await assert.rejects(() => mem.callTool('search_keys', {}), /Parameter "query" is required/);
+
+  await assert.rejects(() => cryptoServer.callTool('hash_sha256', {}), /Parameter "text" is required/);
+  await assert.rejects(() => cryptoServer.callTool('hmac_sign', {}), /Parameter "secret" is required/);
+  await assert.rejects(() => cryptoServer.callTool('hmac_sign', { secret: 'sec' }), /Parameter "message" is required/);
+  await assert.rejects(() => cryptoServer.callTool('eval_entropy', {}), /Parameter "text" is required/);
+
+  await assert.rejects(() => httpSim.callTool('fetch_url', {}), /Parameter "url" is required/);
+
   console.log('✅ Virtual In-Memory MCP Servers: All 4 servers passed verification!');
 }
 

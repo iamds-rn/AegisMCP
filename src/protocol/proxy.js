@@ -73,7 +73,10 @@ class AegisProxyServer {
     // 3. Tool Invocations: tools/call
     if (method === 'tools/call') {
       const rawName = params ? params.name : '';
-      const toolArguments = (params && params.arguments) ? params.arguments : {};
+      if (!rawName || typeof rawName !== 'string') {
+        return createError(id, ERROR_CODES.INVALID_PARAMS, 'Parameter "name" is required and must be a string');
+      }
+      const toolArguments = (params && params.arguments && typeof params.arguments === 'object') ? params.arguments : {};
 
       // Parse server and tool names
       let serverName = 'virtual_filesystem';
@@ -303,13 +306,29 @@ class AegisProxyServer {
           return;
         }
 
-        // Serve Static Web Studio assets
-        let filePath = path.join(this.webDir, url.pathname === '/' ? 'index.html' : url.pathname);
-        if (!fs.existsSync(filePath)) {
+        // Serve Static Web Studio assets strictly confined to webDir
+        let safePath = '/index.html';
+        try {
+          const decoded = decodeURIComponent(url.pathname);
+          const normalized = path.normalize(decoded).replace(/^(\.\.[\/\\])+/, '');
+          safePath = normalized === '/' ? '/index.html' : normalized;
+        } catch {
+          safePath = '/index.html';
+        }
+
+        let filePath = path.resolve(this.webDir, '.' + safePath);
+        // Path Traversal Guard: ensure resolved path is strictly within webDir
+        if (!filePath.startsWith(this.webDir + path.sep) && filePath !== path.join(this.webDir, 'index.html')) {
+          res.writeHead(403, { 'Content-Type': 'text/plain' });
+          res.end('Forbidden');
+          return;
+        }
+
+        if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
           filePath = path.join(this.webDir, 'index.html');
         }
 
-        if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+        if (fs.existsSync(filePath) && fs.statSync(filePath).isFile() && (filePath.startsWith(this.webDir + path.sep) || filePath === path.join(this.webDir, 'index.html'))) {
           const ext = path.extname(filePath);
           const mimeTypes = {
             '.html': 'text/html; charset=utf-8',

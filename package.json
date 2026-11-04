@@ -1,6 +1,6 @@
 {
   "name": "aegis-mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Zero-Trust Security Firewall, Resilience Fuzzer, and Visual Observability Cockpit for the Model Context Protocol (MCP)",
   "main": "src/index.js",
   "bin": {

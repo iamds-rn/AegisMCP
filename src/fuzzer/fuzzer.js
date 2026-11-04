@@ -17,10 +17,11 @@ class ProtocolFuzzer {
    * @returns {Array<object>} List of test cases { category, name, payload, expectedBehavior }
    */
   generateTestCases(tool) {
+    if (!tool || typeof tool !== 'object') return [];
     const testCases = [];
     const schema = tool.inputSchema || {};
-    const properties = schema.properties || {};
-    const required = schema.required || [];
+    const properties = (schema && typeof schema.properties === 'object' && schema.properties !== null) ? schema.properties : {};
+    const required = Array.isArray(schema.required) ? schema.required : [];
 
     // Helper to build a base valid payload
     const baseValid = {};
@@ -171,6 +172,24 @@ class ProtocolFuzzer {
           payload: { ...baseValid, [key]: 'http://169.254.169.254/latest/meta-data/' },
           expectedBehavior: 'FIREWALL_BLOCK_OR_REJECT'
         });
+      } else if (prop.type === 'object' && prop.properties && typeof prop.properties === 'object') {
+        // Nested object property security tests
+        for (const [subKey, subProp] of Object.entries(prop.properties)) {
+          if (subProp && subProp.type === 'string') {
+            testCases.push({
+              category: 'SECURITY_INJECTION',
+              name: `Path Traversal on nested "${key}.${subKey}"`,
+              payload: { ...baseValid, [key]: { ...(baseValid[key] || {}), [subKey]: '../../../../etc/passwd' } },
+              expectedBehavior: 'FIREWALL_BLOCK_OR_REJECT'
+            });
+            testCases.push({
+              category: 'SECURITY_INJECTION',
+              name: `Command Chaining on nested "${key}.${subKey}"`,
+              payload: { ...baseValid, [key]: { ...(baseValid[key] || {}), [subKey]: '; cat /etc/shadow' } },
+              expectedBehavior: 'FIREWALL_BLOCK_OR_REJECT'
+            });
+          }
+        }
       }
     }
 
@@ -259,16 +278,24 @@ class ProtocolFuzzer {
           passedCount++;
         }
       } catch (err) {
-        if (err.message.includes('EXECUTION_TIMEOUT')) {
+        const msg = (err && err.message) ? err.message.toLowerCase() : '';
+        if (msg.includes('execution_timeout')) {
           testResult.status = 'TIMEOUT_DoS_RISK';
           testResult.details = `Execution exceeded ${this.timeoutMs}ms limit`;
           failedCount++;
         } else if (
-          err.message.includes('not found') ||
-          err.message.includes('required') ||
-          err.message.includes('Invalid') ||
-          err.message.includes('Cannot') ||
-          err.message.includes('must be')
+          msg.includes('not found') ||
+          msg.includes('required') ||
+          msg.includes('invalid') ||
+          msg.includes('cannot') ||
+          msg.includes('must be') ||
+          msg.includes('missing') ||
+          msg.includes('validation') ||
+          msg.includes('forbidden') ||
+          msg.includes('denied') ||
+          msg.includes('unauthorized') ||
+          msg.includes('type error') ||
+          msg.includes('syntax')
         ) {
           // Clean functional validation rejection
           testResult.status = 'VALIDATION_REJECTED';

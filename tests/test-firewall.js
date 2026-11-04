@@ -94,7 +94,18 @@ function runFirewallTests() {
   assert(customBlock.blocked, 'Engine should enforce custom rules');
   assert.strictEqual(customBlock.violation.ruleId, 'CUSTOM-001');
 
-  console.log('✅ Firewall Rules & Engine: All 9 test cases passed!');
+  // 10. Circular Reference & Malformed Object Handling
+  const circularPayload = { key: 'safe_value' };
+  circularPayload.self = circularPayload;
+  const circularRes = engineEnforce.evaluate('check_tool', circularPayload);
+  assert(circularRes !== undefined, 'Engine must handle circular references without stack overflow');
+
+  // 11. Undefined & Null Blast Radius Checks
+  const blastRule = BUILTIN_RULES.PAYLOAD_BLAST_RADIUS;
+  assert(!blastRule.check(undefined).violation, 'Undefined payload must not crash blast radius check');
+  assert(!blastRule.check(null).violation, 'Null payload must not crash blast radius check');
+
+  console.log('✅ Firewall Rules & Engine: All 11 test cases passed!');
 }
 
 module.exports = { runFirewallTests };

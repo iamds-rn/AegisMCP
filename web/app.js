@@ -19,6 +19,9 @@ class SoundEngine {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       this.ctx = new AudioCtx();
     }
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {});
+    }
   }
 
   playClick() {
@@ -941,14 +944,28 @@ class AegisStudioApp {
       this.sound.playClick();
       await new Promise(r => setTimeout(r, 350)); // Visual execution step delay
 
-      let resolvedParams = { ...node.params };
-      // Resolve dynamic interpolation
-      if (node.id === 'node_hash') {
-        resolvedParams.text = context.nodes['node_gen'].output.token;
-      } else if (node.id === 'node_mem') {
-        resolvedParams.value = context.nodes['node_hash'].output.hash;
-      } else if (node.id === 'node_file') {
-        resolvedParams.content = `Token Hash: ${context.nodes['node_hash'].output.hash}`;
+      // Resolve dynamic interpolation using template expressions
+      const interpolate = (val) => {
+        if (typeof val === 'string') {
+          return val.replace(/\{\{\s*nodes\.([a-zA-Z0-9_-]+)(?:\.[^}]+|\s*)?\}\}/g, (match, srcId) => {
+            const srcNode = context.nodes[srcId];
+            if (!srcNode || !srcNode.output) return match;
+            const inner = match.replace(/[\{\}]/g, '').trim();
+            const parts = inner.split('.');
+            let curr = srcNode;
+            for (let i = 2; i < parts.length; i++) {
+              if (curr === undefined || curr === null) break;
+              curr = curr[parts[i]];
+            }
+            return curr !== undefined ? (typeof curr === 'object' ? JSON.stringify(curr) : String(curr)) : match;
+          });
+        }
+        return val;
+      };
+
+      let resolvedParams = {};
+      for (const [k, v] of Object.entries(node.params || {})) {
+        resolvedParams[k] = interpolate(v);
       }
 
       // Execute tool

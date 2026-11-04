@@ -62,7 +62,31 @@ function runLedgerTests() {
   const compromisedProof = ledger.exportProof();
   assert.strictEqual(compromisedProof.integrityStatus, 'COMPROMISED');
 
-  console.log('✅ Cryptographic Audit Ledger: All 7 test cases passed!');
+  // 8. Sliding Window Memory Bounding & Integrity
+  const boundedLedger = new AuditLedger({ maxMemoryBlocks: 3 });
+  for (let i = 0; i < 6; i++) {
+    boundedLedger.append('EVENT_STEP', { step: i });
+  }
+  const boundedVerify = boundedLedger.verify();
+  assert(boundedVerify.valid, 'Ledger must remain cryptographically valid across memory-bounded sliding window');
+  assert.strictEqual(boundedVerify.blockCount, 7); // Genesis + 6 steps
+  assert.strictEqual(boundedVerify.activeBlocks, 3);
+  assert.strictEqual(boundedVerify.archivedBlocks, 4);
+
+  // 9. Tamper detection on pruned/archived block
+  boundedLedger.tamper(2, { step: 'tampered_historical_data' });
+  const archivedTamperVerify = boundedLedger.verify();
+  assert(!archivedTamperVerify.valid, 'Tampering with archived historical block must be detected');
+  assert.strictEqual(archivedTamperVerify.brokenIndex, 2);
+
+  // 10. Canonical stringify circular reference and undefined robustness
+  const { canonicalStringify } = require('../src/ledger/auditLedger');
+  const circ = { a: 1 };
+  circ.circ = circ;
+  assert.strictEqual(canonicalStringify(circ), '{"a":1,"circ":"[CIRCULAR]"}');
+  assert.strictEqual(canonicalStringify({ a: undefined, b: 'valid' }), '{"b":"valid"}');
+
+  console.log('✅ Cryptographic Audit Ledger: All 10 test cases passed!');
 }
 
 module.exports = { runLedgerTests };

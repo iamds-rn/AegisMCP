@@ -25,22 +25,26 @@ function calculateShannonEntropy(str) {
 }
 
 /**
- * Recursively traverses any data structure to extract all strings.
+ * Recursively traverses any data structure to extract all strings with cycle detection.
  */
-function extractAllStrings(obj, depth = 0, maxDepth = 15) {
+function extractAllStrings(obj, depth = 0, maxDepth = 15, visited = new Set()) {
   const strings = [];
-  if (depth > maxDepth) return strings;
+  if (depth > maxDepth || obj === null || obj === undefined) return strings;
   if (typeof obj === 'string') {
     strings.push(obj);
   } else if (Array.isArray(obj)) {
+    if (visited.has(obj)) return strings;
+    visited.add(obj);
     for (const item of obj) {
-      strings.push(...extractAllStrings(item, depth + 1, maxDepth));
+      strings.push(...extractAllStrings(item, depth + 1, maxDepth, visited));
     }
-  } else if (obj !== null && typeof obj === 'object') {
+  } else if (typeof obj === 'object') {
+    if (visited.has(obj)) return strings;
+    visited.add(obj);
     for (const key in obj) {
       if (Object.prototype.hasOwnProperty.call(obj, key)) {
         strings.push(key);
-        strings.push(...extractAllStrings(obj[key], depth + 1, maxDepth));
+        strings.push(...extractAllStrings(obj[key], depth + 1, maxDepth, visited));
       }
     }
   }
@@ -48,13 +52,16 @@ function extractAllStrings(obj, depth = 0, maxDepth = 15) {
 }
 
 /**
- * Computes maximum nesting depth of an object.
+ * Computes maximum nesting depth of an object with cycle detection.
  */
-function getObjectDepth(obj) {
-  if (obj === null || typeof obj !== 'object') return 0;
+function getObjectDepth(obj, visited = new Set(), depth = 0, maxAllowedDepth = 25) {
+  if (obj === null || typeof obj !== 'object' || depth > maxAllowedDepth) return 0;
+  if (visited.has(obj)) return 0;
+  visited.add(obj);
+
   let maxChildDepth = 0;
   for (const key of Object.keys(obj)) {
-    maxChildDepth = Math.max(maxChildDepth, getObjectDepth(obj[key]));
+    maxChildDepth = Math.max(maxChildDepth, getObjectDepth(obj[key], visited, depth + 1, maxAllowedDepth));
   }
   return 1 + maxChildDepth;
 }
@@ -246,8 +253,23 @@ const BUILTIN_RULES = {
       const MAX_OBJECT_DEPTH = 12;
       const MAX_TOTAL_KEYS = 200;
 
-      const serialized = JSON.stringify(params);
-      if (serialized.length > MAX_PAYLOAD_BYTES) {
+      if (params === undefined || params === null) {
+        return { violation: false };
+      }
+
+      let serialized;
+      try {
+        serialized = JSON.stringify(params);
+      } catch (err) {
+        return {
+          violation: true,
+          ruleId: 'SEC-005',
+          signature: 'Unserializable / Circular Reference Payload Detected',
+          culprit: err.message
+        };
+      }
+
+      if (serialized && serialized.length > MAX_PAYLOAD_BYTES) {
         return {
           violation: true,
           ruleId: 'SEC-005',

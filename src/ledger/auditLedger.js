@@ -16,15 +16,27 @@ function sha256(str) {
 /**
  * Deterministically serializes an object for canonical hashing
  */
-function canonicalStringify(obj) {
+function canonicalStringify(obj, visited = new Set()) {
+  if (obj === undefined) {
+    return 'null';
+  }
   if (obj === null || typeof obj !== 'object') {
     return JSON.stringify(obj);
   }
-  if (Array.isArray(obj)) {
-    return '[' + obj.map(canonicalStringify).join(',') + ']';
+  if (visited.has(obj)) {
+    return '"[CIRCULAR]"';
   }
-  const keys = Object.keys(obj).sort();
-  return '{' + keys.map(k => JSON.stringify(k) + ':' + canonicalStringify(obj[k])).join(',') + '}';
+  visited.add(obj);
+
+  if (Array.isArray(obj)) {
+    const res = '[' + obj.map(item => canonicalStringify(item, visited)).join(',') + ']';
+    visited.delete(obj);
+    return res;
+  }
+  const keys = Object.keys(obj).filter(k => obj[k] !== undefined).sort();
+  const res = '{' + keys.map(k => JSON.stringify(k) + ':' + canonicalStringify(obj[k], visited)).join(',') + '}';
+  visited.delete(obj);
+  return res;
 }
 
 class AuditBlock {
@@ -47,6 +59,7 @@ class AuditLedger {
   constructor(options = {}) {
     this.maxMemoryBlocks = options.maxMemoryBlocks || 5000;
     this.chain = [];
+    this.archivedBlocks = [];
     this.initGenesisBlock();
   }
 
@@ -64,6 +77,10 @@ class AuditLedger {
 
   getLatestBlock() {
     return this.chain[this.chain.length - 1];
+  }
+
+  getFullChain() {
+    return [...this.archivedBlocks, ...this.chain];
   }
 
   /**
@@ -84,8 +101,8 @@ class AuditLedger {
     this.chain.push(block);
 
     if (this.chain.length > this.maxMemoryBlocks) {
-      // Keep genesis block and slide window if bounded
-      this.chain = [this.chain[0], ...this.chain.slice(-(this.maxMemoryBlocks - 1))];
+      const pruned = this.chain.shift();
+      this.archivedBlocks.push(pruned);
     }
 
     return block;
@@ -95,12 +112,13 @@ class AuditLedger {
    * Cryptographically verifies the integrity of the entire ledger chain.
    */
   verify() {
-    if (this.chain.length === 0) {
+    const fullChain = this.getFullChain();
+    if (fullChain.length === 0) {
       return { valid: false, error: 'Ledger is empty (missing genesis block)' };
     }
 
     // Verify genesis block
-    const genesis = this.chain[0];
+    const genesis = fullChain[0];
     if (genesis.index !== 0 || genesis.prevHash !== GENESIS_PREV_HASH) {
       return {
         valid: false,
@@ -124,10 +142,10 @@ class AuditLedger {
       };
     }
 
-    // Verify sequential links
-    for (let i = 1; i < this.chain.length; i++) {
-      const current = this.chain[i];
-      const prev = this.chain[i - 1];
+    // Verify sequential links across entire continuous chain
+    for (let i = 1; i < fullChain.length; i++) {
+      const current = fullChain[i];
+      const prev = fullChain[i - 1];
 
       // Check index sequence
       if (current.index !== prev.index + 1) {
@@ -169,7 +187,9 @@ class AuditLedger {
 
     return {
       valid: true,
-      blockCount: this.chain.length,
+      blockCount: fullChain.length,
+      activeBlocks: this.chain.length,
+      archivedBlocks: this.archivedBlocks.length,
       headHash: this.getLatestBlock().hash,
       genesisHash: genesis.hash,
       verifiedAt: new Date().toISOString()
@@ -180,7 +200,8 @@ class AuditLedger {
    * For testing and security demonstrations: simulates an adversary tampering with a block's event data.
    */
   tamper(index, modifiedEvent) {
-    const block = this.chain.find(b => b.index === index);
+    const fullChain = this.getFullChain();
+    const block = fullChain.find(b => b.index === index);
     if (!block) {
       throw new Error(`Block #${index} not found in chain`);
     }
@@ -193,15 +214,16 @@ class AuditLedger {
    * Exports an audit proof for external verification.
    */
   exportProof() {
+    const fullChain = this.getFullChain();
     const verification = this.verify();
     return {
       proofVersion: '1.0',
       timestamp: new Date().toISOString(),
       integrityStatus: verification.valid ? 'VERIFIED_PRISTINE' : 'COMPROMISED',
-      blockCount: this.chain.length,
+      blockCount: fullChain.length,
       headHash: this.getLatestBlock().hash,
-      genesisHash: this.chain[0].hash,
-      blocks: this.chain.map(b => ({
+      genesisHash: fullChain[0].hash,
+      blocks: fullChain.map(b => ({
         index: b.index,
         timestamp: b.timestamp,
         prevHash: b.prevHash,

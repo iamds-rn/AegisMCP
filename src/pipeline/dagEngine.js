@@ -6,12 +6,20 @@
 'use strict';
 
 /**
- * Extracts dependency node IDs from template expressions like {{nodes.step1.output.value}}
+ * Extracts dependency node IDs from template expressions like {{nodes.step1.output.value}} or {{ nodes.step1 }}
  */
 function extractDependencies(params) {
+  if (!params) return [];
   const deps = new Set();
-  const regex = /\{\{nodes\.([a-zA-Z0-9_-]+)\./g;
-  const serialized = JSON.stringify(params);
+  const regex = /\{\{\s*nodes\.([a-zA-Z0-9_-]+)(?:\.[^}]+|\s*)?\}\}/g;
+
+  let serialized;
+  try {
+    serialized = typeof params === 'string' ? params : JSON.stringify(params);
+  } catch {
+    return [];
+  }
+  if (!serialized) return [];
 
   let match;
   while ((match = regex.exec(serialized)) !== null) {
@@ -21,9 +29,10 @@ function extractDependencies(params) {
 }
 
 /**
- * Resolves template string using execution context
+ * Resolves template string using execution context with recursion depth limit
  */
-function interpolateValue(val, context) {
+function interpolateValue(val, context, depth = 0, maxDepth = 15) {
+  if (depth > maxDepth) return val;
   if (typeof val === 'string') {
     return val.replace(/\{\{([^}]+)\}\}/g, (_, expression) => {
       const parts = expression.trim().split('.');
@@ -46,11 +55,11 @@ function interpolateValue(val, context) {
       return '';
     });
   } else if (Array.isArray(val)) {
-    return val.map(item => interpolateValue(item, context));
+    return val.map(item => interpolateValue(item, context, depth + 1, maxDepth));
   } else if (val !== null && typeof val === 'object') {
     const res = {};
     for (const k of Object.keys(val)) {
-      res[k] = interpolateValue(val[k], context);
+      res[k] = interpolateValue(val[k], context, depth + 1, maxDepth);
     }
     return res;
   }
@@ -70,7 +79,20 @@ class DAGEngine {
    * @returns {Array<object>} sorted nodes in execution order
    */
   resolveExecutionOrder(nodes) {
-    const nodeMap = new Map(nodes.map(n => [n.id, n]));
+    if (!Array.isArray(nodes)) {
+      throw new Error('Pipeline nodes must be an array.');
+    }
+    const nodeMap = new Map();
+    for (const node of nodes) {
+      if (!node || !node.id) {
+        throw new Error('Every pipeline node must have a valid "id".');
+      }
+      if (nodeMap.has(node.id)) {
+        throw new Error(`Duplicate node ID detected in pipeline: "${node.id}"`);
+      }
+      nodeMap.set(node.id, node);
+    }
+
     const inDegree = new Map();
     const adjList = new Map();
 
@@ -125,6 +147,9 @@ class DAGEngine {
    * @param {object} callbacks - { onNodeStart, onNodeFinish, onNodeError }
    */
   async executePipeline(pipeline, invokerFn, callbacks = {}) {
+    if (!pipeline || !Array.isArray(pipeline.nodes)) {
+      throw new Error('Pipeline definition must contain a "nodes" array.');
+    }
     const sortedNodes = this.resolveExecutionOrder(pipeline.nodes);
     const context = {
       pipelineId: pipeline.id,

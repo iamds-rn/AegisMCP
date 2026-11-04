@@ -83,7 +83,13 @@ class FirewallEngine {
    * Sanitizes input parameters by masking secrets and neutralizing dangerous patterns.
    */
   sanitizeParams(params) {
-    let serialized = JSON.stringify(params);
+    if (!params || typeof params !== 'object') return params;
+    let serialized;
+    try {
+      serialized = JSON.stringify(params);
+    } catch {
+      return params;
+    }
 
     // Scrub secrets
     serialized = serialized.replace(/\b(AKIA[0-9A-Z]{16})\b/g, '[REDACTED_AWS_KEY]');
@@ -111,6 +117,8 @@ class FirewallEngine {
    * @returns {object} Evaluation result
    */
   evaluate(toolName, params = {}, requestId = null) {
+    toolName = toolName || 'unknown_tool';
+    const effectiveParams = (params !== null && typeof params === 'object') ? params : {};
     this.stats.totalEvaluated++;
 
     const allRules = [
@@ -123,7 +131,7 @@ class FirewallEngine {
 
       let result;
       try {
-        result = rule.check(params, toolName);
+        result = rule.check(effectiveParams, toolName);
       } catch (err) {
         // Fall-safe: if rule check throws, log and flag
         result = {
@@ -178,7 +186,7 @@ class FirewallEngine {
           };
         } else if (this.mode === MODES.SANITIZE) {
           this.stats.totalSanitized++;
-          const sanitized = this.sanitizeParams(params);
+          const sanitized = this.sanitizeParams(effectiveParams);
           return {
             allowed: true,
             blocked: false,

@@ -3,7 +3,7 @@
 > **Zero-Trust Security Firewall, Resilience Fuzzer, and Visual Observability Cockpit for the Model Context Protocol (MCP)**
 
 [![Protocol: MCP 2024-11-05](https://img.shields.io/badge/Protocol-MCP%202024--11--05-00f0ff.svg)](https://modelcontextprotocol.io)
-[![Tests: 36 Passing](https://img.shields.io/badge/Tests-36%20Assertions%20Passing-00ff9d.svg)](tests/)
+[![Tests: All Passing](https://img.shields.io/badge/Tests-48%20Assertions%20Passing-00ff9d.svg)](tests/)
 [![Security: Zero--Trust](https://img.shields.io/badge/Security-Zero--Trust%20Firewall-ff3366.svg)](docs/FIREWALL_RULES.md)
 [![Audit: Merkle Hash Chain](https://img.shields.io/badge/Audit-SHA--256%20Merkle%20Ledger-9d4edd.svg)](docs/ARCHITECTURE.md)
 [![Dependencies: 0 External](https://img.shields.io/badge/Dependencies-0%20External-blue.svg)](package.json)

@@ -46,7 +46,31 @@ async function runFuzzerTests() {
   assert(markdown.includes('Breakdown by Test Vector'), 'Report must contain breakdown table');
   assert(markdown.includes(audit.grade), 'Report must contain overall grade');
 
-  console.log('✅ Protocol Fuzzer: All 3 test cases passed!');
+  // 4. Defensive generation against null/empty schemas
+  assert.deepStrictEqual(fuzzer.generateTestCases(null), []);
+  assert.deepStrictEqual(fuzzer.generateTestCases({}), []);
+  assert.deepStrictEqual(fuzzer.generateTestCases({ inputSchema: null }), []);
+
+  // 5. Nested object schema fuzzing
+  const nestedTool = {
+    name: 'nested_exec',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        config: {
+          type: 'object',
+          properties: {
+            filePath: { type: 'string' }
+          }
+        }
+      }
+    }
+  };
+  const nestedCases = fuzzer.generateTestCases(nestedTool);
+  assert(nestedCases.length > 0, 'Should generate test cases for nested schemas');
+  assert(nestedCases.some(tc => tc.name.includes('filePath')), 'Should generate test vector for nested property filePath');
+
+  console.log('✅ Protocol Fuzzer: All 5 test cases passed!');
 }
 
 module.exports = { runFuzzerTests };
