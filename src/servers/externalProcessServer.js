@@ -307,6 +307,7 @@ class ExternalProcessServer {
         },
         timeout: this.timeoutMs
       }, (res) => {
+        res.on('error', reject);
         let data = '';
         res.on('data', chunk => { data += chunk; });
         res.on('end', () => {
