@@ -39,25 +39,46 @@ function canonicalStringify(obj, visited = new Set()) {
 }
 
 /**
- * Extracts dependency node IDs from template expressions like {{nodes.step1.output.value}} or {{ nodes.step1 }}
+ * Extracts dependency node IDs from template expressions like {{nodes.step1.output.value}},
+ * {{steps.step1.result}}, $steps.step1.result, or explicit dependsOn/dependencies arrays.
  */
-function extractDependencies(params) {
-  if (!params) return [];
+function extractDependencies(nodeOrParams) {
+  if (!nodeOrParams) return [];
   const deps = new Set();
-  const regex = /\{\{\s*nodes\.([a-zA-Z0-9_-]+)(?:\.[^}]+|\s*)?\}\}/g;
+
+  if (typeof nodeOrParams === 'object') {
+    if (Array.isArray(nodeOrParams.dependsOn)) {
+      for (const d of nodeOrParams.dependsOn) if (d) deps.add(String(d));
+    }
+    if (Array.isArray(nodeOrParams.dependencies)) {
+      for (const d of nodeOrParams.dependencies) if (d) deps.add(String(d));
+    }
+  }
+
+  const target = (typeof nodeOrParams === 'object' && nodeOrParams.params !== undefined)
+    ? nodeOrParams.params
+    : nodeOrParams;
 
   let serialized;
   try {
-    serialized = typeof params === 'string' ? params : JSON.stringify(params);
+    serialized = typeof target === 'string' ? target : JSON.stringify(target);
   } catch {
-    return [];
+    serialized = '';
   }
-  if (!serialized) return [];
 
-  let match;
-  while ((match = regex.exec(serialized)) !== null) {
-    deps.add(match[1]);
+  if (serialized) {
+    const mustacheRegex = /\{\{\s*(?:nodes|steps|\$nodes|\$steps)\.([a-zA-Z0-9_-]+)(?:\.[^}]+|\s*)?\}\}/g;
+    let match;
+    while ((match = mustacheRegex.exec(serialized)) !== null) {
+      deps.add(match[1]);
+    }
+
+    const dollarRegex = /(?:\$steps|\$nodes)\.([a-zA-Z0-9_-]+)(?:\.[a-zA-Z0-9_.-]+)?/g;
+    while ((match = dollarRegex.exec(serialized)) !== null) {
+      deps.add(match[1]);
+    }
   }
+
   return Array.from(deps);
 }
 
@@ -67,26 +88,120 @@ function extractDependencies(params) {
 function interpolateValue(val, context, depth = 0, maxDepth = 15) {
   if (depth > maxDepth) return val;
   if (typeof val === 'string') {
-    return val.replace(/\{\{([^}]+)\}\}/g, (_, expression) => {
+    const trimmed = val.trim();
+    // Check single exact mustache expression: e.g. {{nodes.a.output}}
+    const exactMustache = trimmed.match(/^\{\{\s*(?:nodes|steps|\$nodes|\$steps)\.([a-zA-Z0-9_-]+)(?:\.([^}]+))?\s*\}\}$/);
+    if (exactMustache) {
+      const nodeId = exactMustache[1];
+      const propPath = exactMustache[2] ? exactMustache[2].trim() : '';
+      const node = (context.nodes && context.nodes[nodeId]) || (context.steps && context.steps[nodeId]);
+      if (!node) {
+        throw new Error(`Unresolved template variable: nodes.${nodeId} does not exist in execution context.`);
+      }
+      if (!propPath) {
+        return node.output !== undefined ? node.output : (node.result !== undefined ? node.result : node);
+      }
+      const parts = propPath.split('.');
+      let current = node;
+      for (let i = 0; i < parts.length; i++) {
+        if (current === undefined || current === null) break;
+        const prop = parts[i];
+        if (prop === 'result' && current.result === undefined && current.output !== undefined) {
+          current = current.output;
+        } else if (prop === 'output' && current.output === undefined && current.result !== undefined) {
+          current = current.result;
+        } else {
+          current = current[prop];
+        }
+      }
+      return current !== undefined ? current : '';
+    }
+
+    // Check single exact dollar expression: e.g. $steps.a.result.port
+    const exactDollar = trimmed.match(/^(?:\$steps|\$nodes)\.([a-zA-Z0-9_-]+)(?:\.([a-zA-Z0-9_.-]+))?$/);
+    if (exactDollar) {
+      const nodeId = exactDollar[1];
+      const propPath = exactDollar[2] || '';
+      const node = (context.nodes && context.nodes[nodeId]) || (context.steps && context.steps[nodeId]);
+      if (!node) {
+        throw new Error(`Unresolved template variable: $steps.${nodeId} does not exist in execution context.`);
+      }
+      if (!propPath) {
+        return node.output !== undefined ? node.output : (node.result !== undefined ? node.result : node);
+      }
+      const parts = propPath.split('.');
+      let current = node;
+      for (let i = 0; i < parts.length; i++) {
+        if (current === undefined || current === null) break;
+        const prop = parts[i];
+        if (prop === 'result' && current.result === undefined && current.output !== undefined) {
+          current = current.output;
+        } else if (prop === 'output' && current.output === undefined && current.result !== undefined) {
+          current = current.result;
+        } else {
+          current = current[prop];
+        }
+      }
+      return current !== undefined ? current : '';
+    }
+
+    let res = val.replace(/\{\{([^}]+)\}\}/g, (_, expression) => {
       const parts = expression.trim().split('.');
       if (parts[0] === 'system' && parts[1] === 'timestamp') {
         return new Date().toISOString();
       }
-      if (parts[0] === 'nodes') {
+      const prefix = parts[0];
+      if (prefix === 'nodes' || prefix === 'steps' || prefix === '$nodes' || prefix === '$steps') {
         const nodeId = parts[1];
-        const node = context.nodes[nodeId];
+        const node = (context.nodes && context.nodes[nodeId]) || (context.steps && context.steps[nodeId]);
         if (!node) {
-          throw new Error(`Unresolved template variable: nodes.${nodeId} does not exist in execution context.`);
+          throw new Error(`Unresolved template variable: ${prefix}.${nodeId} does not exist in execution context.`);
         }
         let current = node;
         for (let i = 2; i < parts.length; i++) {
           if (current === undefined || current === null) break;
-          current = current[parts[i]];
+          const prop = parts[i];
+          if (prop === 'result' && current.result === undefined && current.output !== undefined) {
+            current = current.output;
+          } else if (prop === 'output' && current.output === undefined && current.result !== undefined) {
+            current = current.result;
+          } else {
+            current = current[prop];
+          }
         }
         return current !== undefined ? (typeof current === 'object' ? JSON.stringify(current) : String(current)) : '';
       }
       return '';
     });
+
+    if (res.includes('$steps.') || res.includes('$nodes.')) {
+      res = res.replace(/(?:\$steps|\$nodes)\.([a-zA-Z0-9_-]+)(?:\.([a-zA-Z0-9_.-]+))?/g, (_, nodeId, propPath) => {
+        const node = (context.nodes && context.nodes[nodeId]) || (context.steps && context.steps[nodeId]);
+        if (!node) {
+          throw new Error(`Unresolved template variable: $steps.${nodeId} does not exist in execution context.`);
+        }
+        if (!propPath) {
+          const out = node.output !== undefined ? node.output : node.result;
+          return out !== undefined ? (typeof out === 'object' ? JSON.stringify(out) : String(out)) : '';
+        }
+        const parts = propPath.split('.');
+        let current = node;
+        for (let i = 0; i < parts.length; i++) {
+          if (current === undefined || current === null) break;
+          const prop = parts[i];
+          if (prop === 'result' && current.result === undefined && current.output !== undefined) {
+            current = current.output;
+          } else if (prop === 'output' && current.output === undefined && current.result !== undefined) {
+            current = current.result;
+          } else {
+            current = current[prop];
+          }
+        }
+        return current !== undefined ? (typeof current === 'object' ? JSON.stringify(current) : String(current)) : '';
+      });
+    }
+
+    return res;
   } else if (Array.isArray(val)) {
     return val.map(item => interpolateValue(item, context, depth + 1, maxDepth));
   } else if (val !== null && typeof val === 'object') {
@@ -112,7 +227,7 @@ class DAGEngine {
    * @param {Array<object>} nodes
    * @returns {Array<Array<object>>} Array of tiers (each tier is an array of independent nodes)
    */
-  partitionIntoTiers(nodes) {
+  resolveExecutionTiers(nodes) {
     if (!Array.isArray(nodes)) {
       throw new Error('Pipeline nodes must be an array.');
     }
@@ -137,11 +252,7 @@ class DAGEngine {
 
     // Build graph edges from template dependencies and explicit dependsOn/dependencies
     for (const node of nodes) {
-      const templateDeps = extractDependencies(node.params || {});
-      const explicitDeps = Array.isArray(node.dependsOn)
-        ? node.dependsOn
-        : (Array.isArray(node.dependencies) ? node.dependencies : []);
-      const allDeps = new Set([...templateDeps, ...explicitDeps]);
+      const allDeps = extractDependencies(node);
 
       for (const depId of allDeps) {
         if (!nodeMap.has(depId)) {
@@ -187,6 +298,10 @@ class DAGEngine {
     return tiers;
   }
 
+  partitionIntoTiers(nodes) {
+    return this.resolveExecutionTiers(nodes);
+  }
+
   /**
    * Performs topological sort and cycle detection on nodes.
    *
@@ -194,14 +309,14 @@ class DAGEngine {
    * @returns {Array<object>} sorted nodes in execution order
    */
   resolveExecutionOrder(nodes) {
-    return this.partitionIntoTiers(nodes).flat();
+    return this.resolveExecutionTiers(nodes).flat();
   }
 
   /**
-   * Executes a single pipeline node with template interpolation, firewall evaluation, and tool invocation.
-   * @private
+   * Executes a single pipeline node with template interpolation, firewall evaluation,
+   * tool invocation, error inspection, and step error policy handling.
    */
-  async _executeNode(node, pipeline, context, invokerFn, callbacks = {}) {
+  async executeNode(node, pipeline, context, invokerFn, callbacks = {}) {
     const nodeRecord = {
       id: node.id,
       server: node.server,
@@ -211,6 +326,7 @@ class DAGEngine {
       durationMs: 0,
       resolvedParams: null,
       output: null,
+      result: null,
       error: null
     };
 
@@ -239,9 +355,19 @@ class DAGEngine {
       // Execute tool via invoker
       const toolResult = await invokerFn(node.server, node.tool, nodeRecord.resolvedParams);
 
-      // Check MCP protocol tool error flag (isError: true)
-      if (toolResult && toolResult.isError) {
-        const errorText = (toolResult.content && toolResult.content[0] && toolResult.content[0].text) || 'Tool reported execution error';
+      // Check MCP protocol tool error flag (isError: true) or JSON-RPC error
+      if (toolResult && (toolResult.isError === true || toolResult.error)) {
+        let errorText = 'Tool reported execution error';
+        if (toolResult.isError && toolResult.content && Array.isArray(toolResult.content)) {
+          const texts = toolResult.content.filter(c => c && c.text).map(c => c.text);
+          if (texts.length > 0) errorText = texts.join('; ');
+        } else if (toolResult.error) {
+          errorText = typeof toolResult.error === 'string'
+            ? toolResult.error
+            : (toolResult.error.message || JSON.stringify(toolResult.error));
+        } else if (toolResult.message) {
+          errorText = toolResult.message;
+        }
         throw new Error(`Tool execution error: ${errorText}`);
       }
 
@@ -257,10 +383,12 @@ class DAGEngine {
 
       nodeRecord.status = 'SUCCESS';
       nodeRecord.output = parsedOutput;
+      nodeRecord.result = parsedOutput;
       nodeRecord.durationMs = Date.now() - nodeStart;
 
       // Save into context for subsequent nodes/tiers
       context.nodes[node.id] = nodeRecord;
+      if (context.steps) context.steps[node.id] = nodeRecord;
 
       // Log to tamper-evident audit ledger if available
       if (this.ledger) {
@@ -279,10 +407,64 @@ class DAGEngine {
 
       return nodeRecord;
     } catch (err) {
-      nodeRecord.status = 'FAILED';
-      nodeRecord.error = err.message;
       nodeRecord.durationMs = Date.now() - nodeStart;
+      nodeRecord.error = err.message;
+
+      // Step Error Policy 1: fallback value
+      if (node.fallback !== undefined) {
+        nodeRecord.status = 'FALLBACK';
+        nodeRecord.output = node.fallback;
+        nodeRecord.result = node.fallback;
+        context.nodes[node.id] = nodeRecord;
+        if (context.steps) context.steps[node.id] = nodeRecord;
+
+        if (this.ledger) {
+          this.ledger.append('PIPELINE_STEP_FALLBACK', {
+            pipelineId: context.pipelineId,
+            nodeId: node.id,
+            server: node.server,
+            tool: node.tool,
+            error: err.message,
+            fallback: node.fallback
+          });
+        }
+
+        if (callbacks.onNodeFallback) {
+          callbacks.onNodeFallback(nodeRecord, err);
+        } else if (callbacks.onNodeFinish) {
+          callbacks.onNodeFinish(nodeRecord);
+        }
+
+        return nodeRecord;
+      }
+
+      // Step Error Policy 2: abortOnError: false
+      if (node.abortOnError === false) {
+        nodeRecord.status = 'FAILED';
+        context.nodes[node.id] = nodeRecord;
+        if (context.steps) context.steps[node.id] = nodeRecord;
+
+        if (this.ledger) {
+          this.ledger.append('PIPELINE_STEP_FAILED', {
+            pipelineId: context.pipelineId,
+            nodeId: node.id,
+            server: node.server,
+            tool: node.tool,
+            error: err.message
+          });
+        }
+
+        if (callbacks.onNodeError) {
+          callbacks.onNodeError(nodeRecord, err);
+        }
+
+        return nodeRecord;
+      }
+
+      // Default: Fail and abort pipeline
+      nodeRecord.status = 'FAILED';
       context.nodes[node.id] = nodeRecord;
+      if (context.steps) context.steps[node.id] = nodeRecord;
 
       if (this.ledger) {
         this.ledger.append('PIPELINE_STEP_FAILED', {
@@ -302,6 +484,10 @@ class DAGEngine {
     }
   }
 
+  async _executeNode(node, pipeline, context, invokerFn, callbacks = {}) {
+    return this.executeNode(node, pipeline, context, invokerFn, callbacks);
+  }
+
   /**
    * Executes a complete DAG pipeline using topological tier concurrency.
    * Independent nodes within each tier execute in parallel via Promise.all.
@@ -317,12 +503,14 @@ class DAGEngine {
     }
 
     const pipelineId = pipeline.id || pipeline.name || 'unnamed-pipeline';
-    const tiers = this.partitionIntoTiers(pipeline.nodes);
+    const tiers = this.resolveExecutionTiers(pipeline.nodes);
     const context = {
       pipelineId,
       startedAt: new Date().toISOString(),
-      nodes: {}
+      nodes: {},
+      steps: {}
     };
+    context.steps = context.nodes;
 
     const executionLog = [];
     const tierExecutions = [];
@@ -334,7 +522,7 @@ class DAGEngine {
 
       // Execute all independent nodes in this tier in parallel using Promise.all
       const tierRecords = await Promise.all(
-        tier.map(node => this._executeNode(node, pipeline, context, invokerFn, callbacks))
+        tier.map(node => this.executeNode(node, pipeline, context, invokerFn, callbacks))
       );
 
       const tierDurationMs = Date.now() - tierStartTime;
@@ -389,7 +577,8 @@ class DAGEngine {
       tiersExecuted: tiers.length,
       tierExecutions,
       executionLog,
-      finalOutputs: context.nodes
+      finalOutputs: context.nodes,
+      context
     };
   }
 }

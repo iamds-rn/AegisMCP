@@ -850,6 +850,7 @@ class AegisStudioApp {
     this.setupSynthesizerUI();
     this.setupConfigsUI();
     this.setupServersUI();
+    this.setupMilestone6UI();
     this.updateStats();
     this.renderTelemetryChart();
 
@@ -939,6 +940,12 @@ class AegisStudioApp {
 
         if (targetTab === 'tab-pipeline') {
           setTimeout(() => this.drawPipelineCanvas(), 50);
+        }
+        if (targetTab === 'tab-approvals') {
+          this.fetchApprovals();
+        }
+        if (targetTab === 'tab-metrics') {
+          this.fetchPrometheusMetrics();
         }
       });
     });
@@ -3236,6 +3243,130 @@ Grade: A+
       }
       this.renderTelemetryChart();
     }
+  }
+
+  setupMilestone6UI() {
+    const refreshApprBtn = document.getElementById('refresh-approvals-btn');
+    if (refreshApprBtn) {
+      refreshApprBtn.addEventListener('click', () => this.fetchApprovals());
+    }
+
+    const genProofBtn = document.getElementById('generate-proof-btn');
+    if (genProofBtn) {
+      genProofBtn.addEventListener('click', () => this.generateMerkleProof());
+    }
+
+    const verifyProofBtn = document.getElementById('verify-current-proof-btn');
+    if (verifyProofBtn) {
+      verifyProofBtn.addEventListener('click', () => this.verifyCurrentMerkleProof());
+    }
+
+    const refreshMetricsBtn = document.getElementById('refresh-metrics-btn');
+    if (refreshMetricsBtn) {
+      refreshMetricsBtn.addEventListener('click', () => this.fetchPrometheusMetrics());
+    }
+  }
+
+  async fetchApprovals() {
+    try {
+      const res = await fetch('/api/approvals');
+      if (!res.ok) return;
+      const data = await res.json();
+      const listEl = document.getElementById('approvals-list');
+      const emptyEl = document.getElementById('approvals-empty-state');
+      if (!listEl) return;
+      listEl.innerHTML = '';
+      if (!data.pending || data.pending.length === 0) {
+        if (emptyEl) emptyEl.style.display = 'block';
+        return;
+      }
+      if (emptyEl) emptyEl.style.display = 'none';
+
+      data.pending.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'approval-card';
+        card.style.cssText = 'background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 14px; margin-bottom: 10px;';
+        card.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-weight: 600; color: #f59e0b;">Pending Authorization: ${escapeHtml(item.tool)}</span>
+            <span style="font-size: 11px; color: var(--text-muted);">Caller: ${escapeHtml(item.caller)}</span>
+          </div>
+          <div style="font-size: 12px; color: var(--text-secondary); margin-top: 6px;">${escapeHtml(item.reason)}</div>
+          <pre style="background: rgba(0,0,0,0.3); padding: 8px; border-radius: 4px; font-size: 11px; margin-top: 8px;">${escapeHtml(JSON.stringify(item.params, null, 2))}</pre>
+          <div style="display: flex; gap: 8px; margin-top: 10px;">
+            <button class="btn-sm btn-primary" onclick="window.aegis.resolveApproval('${item.approvalId}', 'approve')">Approve Action</button>
+            <button class="btn-sm btn-outline" style="border-color: #ef4444; color: #ef4444;" onclick="window.aegis.resolveApproval('${item.approvalId}', 'reject')">Reject</button>
+          </div>
+        `;
+        listEl.appendChild(card);
+      });
+    } catch (_) {}
+  }
+
+  async resolveApproval(id, action) {
+    try {
+      const res = await fetch(`/api/approvals/${id}/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approver: 'cockpit_operator' })
+      });
+      if (res.ok) {
+        if (this.sound) this.sound.playClick();
+        this.fetchApprovals();
+      }
+    } catch (_) {}
+  }
+
+  async generateMerkleProof() {
+    const input = document.getElementById('proof-block-index');
+    const idx = input ? parseInt(input.value, 10) || 0 : 0;
+    try {
+      const res = await fetch(`/api/ledger/proof/inclusion?index=${idx}`);
+      if (!res.ok) return;
+      this.currentProof = await res.json();
+      const card = document.getElementById('proof-display-card');
+      const out = document.getElementById('proof-json-output');
+      const verifyBtn = document.getElementById('verify-current-proof-btn');
+      const statusEl = document.getElementById('proof-verification-status');
+      if (card) card.style.display = 'block';
+      if (out) out.textContent = JSON.stringify(this.currentProof, null, 2);
+      if (verifyBtn) verifyBtn.disabled = false;
+      if (statusEl) statusEl.textContent = 'Proof generated. Click "Verify Proof" to run constant-time cryptographic verification.';
+      if (this.sound) this.sound.playClick();
+    } catch (_) {}
+  }
+
+  async verifyCurrentMerkleProof() {
+    if (!this.currentProof) return;
+    try {
+      const res = await fetch('/api/ledger/verify-inclusion-proof', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.currentProof)
+      });
+      const data = await res.json();
+      const statusEl = document.getElementById('proof-verification-status');
+      if (statusEl) {
+        if (data.valid) {
+          statusEl.innerHTML = '<span style="color: #10b981;">✔ Cryptographic Merkle Inclusion Proof VERIFIED VALID: Leaf is attested member of root hash.</span>';
+          if (this.sound) this.sound.playClick();
+        } else {
+          statusEl.innerHTML = '<span style="color: #ef4444;">❌ Cryptographic Verification FAILED: Leaf does not belong to root!</span>';
+          if (this.sound) this.sound.playBlockAlarm();
+        }
+      }
+    } catch (_) {}
+  }
+
+  async fetchPrometheusMetrics() {
+    try {
+      const res = await fetch('/metrics');
+      if (!res.ok) return;
+      const text = await res.text();
+      const out = document.getElementById('metrics-raw-output');
+      if (out) out.textContent = text;
+      if (this.sound) this.sound.playClick();
+    } catch (_) {}
   }
 }
 

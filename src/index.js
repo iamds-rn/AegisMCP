@@ -31,6 +31,15 @@ const {
 } = require('./servers/virtualHub');
 const { DynamicRuleSynthesizer } = require('./firewall/synthesizer');
 const { ExploitPayloadGenerator } = require('./firewall/exploitGenerator');
+const { SemanticGuard } = require('./firewall/semanticGuard');
+const { OutputScrubber, isValidLuhn, REDACTION_PATTERNS } = require('./firewall/outputScrubber');
+const { AdaptiveImmuneLoop, MUTATION_STRATEGIES } = require('./firewall/adaptiveImmuneLoop');
+const { AccessControlEngine, ApprovalGate } = require('./security/accessControl');
+const { MtlsServer, MtlsClient, TEST_CERTS } = require('./transport/mtlsMesh');
+const { MerkleTree, hashLeaf, hashNodes } = require('./ledger/merkleTree');
+const { WasmSandbox, IsolatedVmSandbox, SandboxManager, SAMPLE_WASM_BINARY } = require('./sandbox/wasmSandbox');
+const { TelemetryEngine, Span, parseTraceparent, formatTraceparent } = require('./observability/telemetry');
+const { PrometheusExporter } = require('./observability/prometheusExporter');
 const { ExternalProcessServer } = require('./servers/externalProcessServer');
 const { ClientConfigGenerator } = require('./protocol/configGenerator');
 const { AegisProxyServer } = require('./protocol/proxy');
@@ -39,13 +48,26 @@ module.exports = {
   // Protocol
   jsonrpc,
   ClientConfigGenerator,
-  // Firewall
+  // Firewall & Semantic Defense
   FirewallEngine,
   MODES,
   rules,
   DynamicRuleSynthesizer,
   ExploitPayloadGenerator,
-  // Audit Ledger & Persistence
+  SemanticGuard,
+  OutputScrubber,
+  isValidLuhn,
+  REDACTION_PATTERNS,
+  AdaptiveImmuneLoop,
+  MUTATION_STRATEGIES,
+  // Security & Access Control
+  AccessControlEngine,
+  ApprovalGate,
+  // Transport & mTLS Mesh
+  MtlsServer,
+  MtlsClient,
+  TEST_CERTS,
+  // Audit Ledger, Persistence & Merkle Proofs
   AuditBlock,
   AuditLedger,
   sha256,
@@ -53,6 +75,9 @@ module.exports = {
   AuditFilePersistence,
   FilePersistence,
   LedgerPersistenceError,
+  MerkleTree,
+  hashLeaf,
+  hashNodes,
   // Cryptographic Attestation
   attestBlock,
   verifyAttestation,
@@ -62,6 +87,17 @@ module.exports = {
   verifyAllAttestations,
   LedgerAttestor,
   ATTESTATION_EVENT_TYPE,
+  // Sandboxing
+  WasmSandbox,
+  IsolatedVmSandbox,
+  SandboxManager,
+  SAMPLE_WASM_BINARY,
+  // Observability & Telemetry
+  TelemetryEngine,
+  Span,
+  parseTraceparent,
+  formatTraceparent,
+  PrometheusExporter,
   // Fuzzer
   ProtocolFuzzer,
   // DAG Orchestration

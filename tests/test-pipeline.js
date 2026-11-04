@@ -127,7 +127,126 @@ async function runPipelineTests() {
   // 6. Invalid pipeline input validation
   await assert.rejects(() => pipelineEngine.executePipeline({ id: 'invalid-pipeline' }, invoker), /Pipeline definition must contain a "nodes" array/);
 
-  console.log('✅ Visual DAG Pipeline Engine: All 6 test cases passed!');
+  // 7. Topological Tier Grouping & Diamond DAG Resolution
+  const diamondNodes = [
+    { id: 'node_d', params: { in1: '{{nodes.node_b.output}}', in2: '{{nodes.node_c.output}}' } },
+    { id: 'node_b', dependsOn: ['node_a'], params: {} },
+    { id: 'node_c', dependencies: ['node_a'], params: {} },
+    { id: 'node_a', params: { in: 'root' } }
+  ];
+  const diamondTiers = engine.resolveExecutionTiers(diamondNodes);
+  assert.strictEqual(diamondTiers.length, 3);
+  assert.deepStrictEqual(diamondTiers[0].map(n => n.id), ['node_a']);
+  assert.deepStrictEqual(diamondTiers[1].map(n => n.id).sort(), ['node_b', 'node_c']);
+  assert.deepStrictEqual(diamondTiers[2].map(n => n.id), ['node_d']);
+
+  const diamondOrder = engine.resolveExecutionOrder(diamondNodes);
+  assert.strictEqual(diamondOrder[0].id, 'node_a');
+  assert.strictEqual(diamondOrder[3].id, 'node_d');
+
+  // 8. Concurrent Tier Execution Speedup (<90ms for 3 parallel 40ms tasks)
+  const concurrentNodes = [
+    { id: 't1_a', server: 'mock', tool: 'delay', params: { ms: 40 } },
+    { id: 't1_b', server: 'mock', tool: 'delay', params: { ms: 40 } },
+    { id: 't1_c', server: 'mock', tool: 'delay', params: { ms: 40 } }
+  ];
+  const delayInvoker = async (server, tool, params) => {
+    await new Promise(r => setTimeout(r, params.ms || 40));
+    return { content: [{ type: 'text', text: JSON.stringify({ finished: true, id: params.id || 'ok' }) }] };
+  };
+  const cStart = Date.now();
+  const cResult = await pipelineEngine.executePipeline({ id: 'concurrent-test', nodes: concurrentNodes }, delayInvoker);
+  const cDuration = Date.now() - cStart;
+  assert.strictEqual(cResult.status, 'COMPLETED');
+  assert.strictEqual(cResult.stepsExecuted, 3);
+  // Sequential would take >= 120ms; parallel tier should take < 90ms (and at least ~35ms)
+  assert(cDuration < 90, `Concurrent tier execution should complete in <90ms, took ${cDuration}ms`);
+
+  // 9. Tool Execution Error Inspection (MCP isError: true and JSON-RPC error)
+  const errorNodes = [
+    { id: 'fail_node', server: 'mock', tool: 'err', params: {} }
+  ];
+  const mcpErrorInvoker = async () => ({
+    isError: true,
+    content: [{ type: 'text', text: 'Downstream MCP service unreachable' }]
+  });
+  await assert.rejects(
+    () => pipelineEngine.executePipeline({ id: 'err-pipe-1', nodes: errorNodes }, mcpErrorInvoker),
+    /Downstream MCP service unreachable/
+  );
+
+  const rpcErrorInvoker = async () => ({
+    error: { code: -32603, message: 'Internal RPC error' }
+  });
+  await assert.rejects(
+    () => pipelineEngine.executePipeline({ id: 'err-pipe-2', nodes: errorNodes }, rpcErrorInvoker),
+    /Internal RPC error/
+  );
+
+  // 10. Step Error Policy: abortOnError: false
+  const nonFatalLedger = new AuditLedger();
+  const nonFatalEngine = new DAGEngine({ ledger: nonFatalLedger });
+  const nonFatalPipeline = {
+    id: 'non-fatal-pipeline',
+    nodes: [
+      { id: 'step_err', server: 'mock', tool: 'bad_tool', abortOnError: false },
+      { id: 'step_ok', server: 'mock', tool: 'good_tool', dependsOn: ['step_err'] }
+    ]
+  };
+  const mixedInvoker = async (server, tool) => {
+    if (tool === 'bad_tool') throw new Error('Simulated transient failure');
+    return { content: [{ type: 'text', text: JSON.stringify({ status: 'ok' }) }] };
+  };
+  const nonFatalRes = await nonFatalEngine.executePipeline(nonFatalPipeline, mixedInvoker);
+  assert.strictEqual(nonFatalRes.status, 'COMPLETED');
+  assert.strictEqual(nonFatalRes.context.nodes.step_err.status, 'FAILED');
+  assert.strictEqual(nonFatalRes.context.nodes.step_ok.status, 'SUCCESS');
+  const failedAudit = nonFatalLedger.chain.filter(b => b.event.type === 'PIPELINE_STEP_FAILED');
+  assert.strictEqual(failedAudit.length, 1);
+  assert.strictEqual(failedAudit[0].event.nodeId, 'step_err');
+
+  // 11. Step Error Policy: fallback value & $steps syntax
+  const fallbackLedger = new AuditLedger();
+  const fallbackEngine = new DAGEngine({ ledger: fallbackLedger });
+  const fallbackPipeline = {
+    id: 'fallback-pipeline',
+    nodes: [
+      {
+        id: 'fetch_remote_conf',
+        server: 'mock',
+        tool: 'fetch',
+        params: {},
+        fallback: { host: '127.0.0.1', port: 8080 }
+      },
+      {
+        id: 'apply_conf',
+        server: 'mock',
+        tool: 'apply',
+        params: {
+          targetHost: '$steps.fetch_remote_conf.result.host',
+          targetPort: '$steps.fetch_remote_conf.result.port'
+        }
+      }
+    ]
+  };
+  let appliedParams = null;
+  const fallbackInvoker = async (server, tool, params) => {
+    if (tool === 'fetch') {
+      return { isError: true, content: [{ type: 'text', text: 'Network timeout fetching remote config' }] };
+    }
+    appliedParams = params;
+    return { content: [{ type: 'text', text: JSON.stringify({ applied: true }) }] };
+  };
+  const fallbackRes = await fallbackEngine.executePipeline(fallbackPipeline, fallbackInvoker);
+  assert.strictEqual(fallbackRes.status, 'COMPLETED');
+  assert.strictEqual(fallbackRes.context.nodes.fetch_remote_conf.status, 'FALLBACK');
+  assert.deepStrictEqual(fallbackRes.context.nodes.fetch_remote_conf.output, { host: '127.0.0.1', port: 8080 });
+  assert.deepStrictEqual(appliedParams, { targetHost: '127.0.0.1', targetPort: 8080 });
+  const fallbackAudit = fallbackLedger.chain.filter(b => b.event.type === 'PIPELINE_STEP_FALLBACK');
+  assert.strictEqual(fallbackAudit.length, 1);
+  assert.strictEqual(fallbackAudit[0].event.nodeId, 'fetch_remote_conf');
+
+  console.log('✅ Visual DAG Pipeline Engine: All 11 test cases passed!');
 }
 
 module.exports = { runPipelineTests };

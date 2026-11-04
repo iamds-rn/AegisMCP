@@ -7,6 +7,9 @@
 
 const { BUILTIN_RULES } = require('./rules');
 const { ERROR_CODES, createError } = require('../protocol/jsonrpc');
+const { SemanticGuard } = require('./semanticGuard');
+const { OutputScrubber } = require('./outputScrubber');
+const { AccessControlEngine, ApprovalGate } = require('../security/accessControl');
 
 const MODES = {
   ENFORCE: 'ENFORCE',       // Drop/block request immediately with JSON-RPC error
@@ -273,6 +276,30 @@ class FirewallEngine {
       this.rateLimiter = new TokenBucketRateLimiter({ enabled: false });
     }
 
+    // Milestone 6: Semantic Guard (Lightweight Vector Cosine Similarity)
+    this.semanticGuard = options.semanticGuard || new SemanticGuard({
+      enabled: options.enableSemanticGuard !== false,
+      ...(options.semanticGuardOptions || {})
+    });
+
+    // Milestone 6: Output Scrubber & PII Shield
+    this.outputScrubber = options.outputScrubber || new OutputScrubber({
+      enabled: options.enableOutputScrubber !== false,
+      ...(options.outputScrubberOptions || {})
+    });
+
+    // Milestone 6: Attribute-Based Access Control (ABAC) Engine
+    this.accessControl = options.accessControl || new AccessControlEngine({
+      enabled: options.enableAccessControl === true,
+      ...(options.accessControlOptions || {})
+    });
+
+    // Milestone 6: Human-in-the-Loop (HITL) Approval Gate
+    this.approvalGate = options.approvalGate || new ApprovalGate({
+      enabled: options.enableApprovalGate === true,
+      ...(options.approvalGateOptions || {})
+    });
+
     // Telemetry & metrics
     this.stats = {
       totalEvaluated: 0,
@@ -288,6 +315,14 @@ class FirewallEngine {
     // Bounded alert log (last 50 alerts)
     this.recentAlerts = [];
     this.maxAlerts = 50;
+  }
+
+  /**
+   * Milestone 6: Scrubs sensitive credentials, tokens, PII, and indirect injections from tool responses
+   */
+  scrubOutput(output) {
+    if (!this.outputScrubber) return { scrubbed: false, result: output, redactionCount: 0, redactions: [] };
+    return this.outputScrubber.scrub(output);
   }
 
   setMode(mode) {
@@ -447,6 +482,92 @@ class FirewallEngine {
     const effectiveParams = (params !== null && typeof params === 'object') ? params : {};
     this.stats.totalEvaluated++;
 
+    // 0. Attribute-Based Access Control (ABAC) Gate
+    if (this.accessControl && this.accessControl.enabled) {
+      const acRes = this.accessControl.checkPermission({
+        role: options.role || (options.clientInfo && options.clientInfo.role) || 'admin',
+        server: options.server || 'default',
+        tool: toolName,
+        params: effectiveParams
+      });
+      if (!acRes.allowed) {
+        this.stats.totalBlocked++;
+        this.stats.violationsByTool[toolName] = (this.stats.violationsByTool[toolName] || 0) + 1;
+        const alert = {
+          timestamp: new Date().toISOString(),
+          ruleId: 'ACCESS-DENIED',
+          ruleName: 'Access Control Policy',
+          severity: 'HIGH',
+          toolName,
+          signature: acRes.reason,
+          culprit: `Unauthorized tool/parameter invocation under role`,
+          mode: this.mode
+        };
+        this.recentAlerts.unshift(alert);
+        if (this.recentAlerts.length > this.maxAlerts) this.recentAlerts.pop();
+
+        return {
+          allowed: false,
+          blocked: true,
+          accessDenied: true,
+          mode: this.mode,
+          violation: alert,
+          jsonrpcError: createError(
+            requestId,
+            ERROR_CODES.AEGIS_ACCESS_DENIED,
+            `AegisMCP Access Control: ${acRes.reason}`,
+            { toolName, reason: acRes.reason }
+          )
+        };
+      }
+    }
+
+    // 0.1 Human-in-the-Loop (HITL) Approval Gate
+    if (this.approvalGate && this.approvalGate.enabled && !options.approvalToken) {
+      if (this.approvalGate.isHighRisk(toolName)) {
+        const reqRecord = this.approvalGate.requestApproval({
+          server: options.server || 'default',
+          tool: toolName,
+          params: effectiveParams,
+          caller: options.caller || options.clientId || 'agent',
+          ttlMs: options.approvalTtlMs
+        });
+
+        const alert = {
+          timestamp: new Date().toISOString(),
+          ruleId: 'APPROVAL-REQUIRED',
+          ruleName: 'Human Approval Gate',
+          severity: 'HIGH',
+          toolName,
+          signature: `Tool execution held pending human authorization (ID: ${reqRecord.approvalId})`,
+          culprit: `High-risk tool invocation: ${toolName}`,
+          mode: this.mode
+        };
+        this.recentAlerts.unshift(alert);
+        if (this.recentAlerts.length > this.maxAlerts) this.recentAlerts.pop();
+
+        return {
+          allowed: false,
+          blocked: true,
+          approvalRequired: true,
+          approvalRecord: reqRecord,
+          mode: this.mode,
+          violation: alert,
+          jsonrpcError: createError(
+            requestId,
+            ERROR_CODES.AEGIS_AWAITING_APPROVAL,
+            `AegisMCP Approval Gate: Tool execution held pending human authorization. Approval ID: ${reqRecord.approvalId}`,
+            {
+              approvalId: reqRecord.approvalId,
+              toolName,
+              expiresAt: reqRecord.expiresAt,
+              recommendation: 'Operator must approve via Cockpit UI or POST /api/approvals/:id/approve'
+            }
+          )
+        };
+      }
+    }
+
     // 1. Sliding-Window Token Bucket Rate Limiting Gate
     if (this.rateLimiter && this.rateLimiter.enabled) {
       const rateKey = (options && (options.rateLimitKey || options.clientId || options.key)) || toolName;
@@ -511,6 +632,51 @@ class FirewallEngine {
             mode: this.mode,
             violation: alert,
             retryAfterMs: rateResult.retryAfterMs
+          };
+        }
+      }
+    }
+
+    // 1.5 Lightweight Semantic Guardrails (Vector Cosine Similarity)
+    if (this.semanticGuard && this.semanticGuard.enabled) {
+      const semResult = this.semanticGuard.evaluate(effectiveParams);
+      if (semResult.match) {
+        this.stats.violationsByRule['SEM-001'] = (this.stats.violationsByRule['SEM-001'] || 0) + 1;
+        this.stats.violationsByTool[toolName] = (this.stats.violationsByTool[toolName] || 0) + 1;
+
+        const alert = {
+          timestamp: new Date().toISOString(),
+          ruleId: semResult.ruleId,
+          ruleName: semResult.name,
+          severity: 'CRITICAL',
+          toolName,
+          signature: semResult.description,
+          culprit: `Semantic alignment: ${semResult.category} (${(semResult.score * 100).toFixed(1)}%)`,
+          mode: this.mode
+        };
+        this.recentAlerts.unshift(alert);
+        if (this.recentAlerts.length > this.maxAlerts) this.recentAlerts.pop();
+
+        if (this.mode === MODES.ENFORCE) {
+          this.stats.totalBlocked++;
+          return {
+            allowed: false,
+            blocked: true,
+            semanticBlocked: true,
+            mode: this.mode,
+            violation: alert,
+            jsonrpcError: createError(
+              requestId,
+              ERROR_CODES.AEGIS_POLICY_VIOLATION,
+              `AegisMCP Semantic Guard: ${semResult.description}`,
+              {
+                ruleId: semResult.ruleId,
+                category: semResult.category,
+                similarityScore: semResult.score,
+                threshold: semResult.threshold,
+                recommendation: 'Adversarial prompt injection pattern detected. Request rejected.'
+              }
+            )
           };
         }
       }

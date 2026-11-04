@@ -29,7 +29,7 @@
       <div class="logo-text">
         <div class="title-row">
           <span class="brand-title">AEGIS<span class="accent">MCP</span></span>
-          <span class="version-tag">v1.5.0</span>
+          <span class="version-tag">v1.6.0</span>
           <span class="protocol-badge">MCP 2024-11-05</span>
         </div>
         <span class="brand-tagline">Zero-Trust Firewall & Resilience Studio</span>
@@ -190,6 +190,15 @@
           </svg>
           <span class="tab-text">Tool Studio</span>
         </button>
+        <button class="nav-tab" data-tab="tab-metrics">
+          <svg class="tab-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 3v18h18"/>
+            <path d="M18 17V9"/>
+            <path d="M13 17V5"/>
+            <path d="M8 17v-3"/>
+          </svg>
+          <span class="tab-text">Prometheus Metrics</span>
+        </button>
 
         <div class="nav-group-label">SECURITY & FIREWALL</div>
         <button class="nav-tab" data-tab="tab-firewall">
@@ -197,6 +206,14 @@
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
           </svg>
           <span class="tab-text">Firewall Policies</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-approvals">
+          <svg class="tab-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <polyline points="16 11 18 13 22 9"/>
+          </svg>
+          <span class="tab-text">Human Approvals</span>
         </button>
         <button class="nav-tab" data-tab="tab-synthesizer">
           <svg class="tab-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -247,6 +264,13 @@
             <line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
           <span class="tab-text">Ledger Forensics</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-proofs">
+          <svg class="tab-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/>
+            <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
+          </svg>
+          <span class="tab-text">Merkle Proofs</span>
         </button>
 
         <div class="nav-group-label">INFRASTRUCTURE</div>
@@ -1168,6 +1192,66 @@
             <!-- Server Cards List -->
             <div id="fleet-servers-cards" class="fleet-cards-grid" style="margin-top: 16px;"></div>
           </div>
+        </div>
+      </section>
+
+      <!-- TAB: HUMAN-IN-THE-LOOP APPROVALS -->
+      <section class="tab-pane" id="tab-approvals">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div>
+              <span class="panel-title">Human-in-the-Loop (HITL) Execution Gate</span>
+              <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                Critical and high-blast-radius MCP actions held pending explicit operator authorization.
+              </p>
+            </div>
+            <button class="btn-sm btn-outline" id="refresh-approvals-btn">Refresh Queue</button>
+          </div>
+          <div id="approvals-queue-container" style="margin-top: 16px;">
+            <div class="empty-state" id="approvals-empty-state" style="padding: 30px; text-align: center; color: var(--text-muted);">
+              No actions currently pending operator authorization. The execution pipeline is clear.
+            </div>
+            <div id="approvals-list" class="approvals-list-grid"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: MERKLE INCLUSION PROOFS -->
+      <section class="tab-pane" id="tab-proofs">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div>
+              <span class="panel-title">Cryptographic Merkle Inclusion Proof Inspector</span>
+              <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                Generate and verify logarithmic O(log N) inclusion proofs for any block in the audit ledger against the attested root hash.
+              </p>
+            </div>
+          </div>
+          <div style="display: flex; gap: 10px; margin-top: 14px;">
+            <input type="number" id="proof-block-index" placeholder="Block Index (e.g. 0)" class="form-input" style="width: 180px;" value="0" min="0">
+            <button class="btn-primary" id="generate-proof-btn">Generate Proof</button>
+            <button class="btn-outline" id="verify-current-proof-btn" disabled>Verify Proof</button>
+          </div>
+          <div id="proof-display-card" style="margin-top: 16px; display: none;">
+            <pre class="json-code-box" id="proof-json-output" style="max-height: 350px; overflow-y: auto; font-size: 12px;"></pre>
+            <div id="proof-verification-status" style="margin-top: 10px; font-weight: 600;"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: PROMETHEUS METRICS & OTEL -->
+      <section class="tab-pane" id="tab-metrics">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div>
+              <span class="panel-title">Prometheus Operational Metrics & Distributed Tracing</span>
+              <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                Raw text exposition format exposed at standard /metrics HTTP endpoint for Prometheus and Grafana.
+              </p>
+            </div>
+            <button class="btn-sm btn-outline" id="refresh-metrics-btn">Refresh /metrics</button>
+          </div>
+          <pre class="json-code-box" id="metrics-raw-output" style="margin-top: 16px; max-height: 450px; overflow-y: auto; font-size: 11px;"></pre>
         </div>
       </section>
 

@@ -25,11 +25,12 @@ const { runLedgerPersistenceTests } = require('./test-ledger-persistence');
 const { runEdgeCaseAuditTests } = require('./test-audit-edge-cases');
 const { runProcessSupervisionTests } = require('./test-process-supervision');
 const { runCliTests } = require('./test-cli');
+const { runMilestone6Tests } = require('./test-milestone6');
 
 async function main() {
   console.log(`
 🛡️  ==============================================================
-    AEGIS-MCP COMPREHENSIVE AUTOMATED TEST SUITE (v1.5.0)
+    AEGIS-MCP COMPREHENSIVE AUTOMATED TEST SUITE (v1.6.0)
 ==============================================================
 `);
 
@@ -55,7 +56,8 @@ async function main() {
     { name: 'Milestone 3 Ledger File Persistence & HMAC-SHA256 Attestation', fn: runLedgerPersistenceTests },
     { name: 'Deep Code Audit Edge Cases & Defect Reproductions', fn: runEdgeCaseAuditTests },
     { name: 'Milestone 4 Process Supervision, Concurrent DAG & Health Probes', fn: runProcessSupervisionTests },
-    { name: 'Milestone 4 CLI Automation & Command-Line Interface', fn: runCliTests }
+    { name: 'Milestone 4 CLI Automation & Command-Line Interface', fn: runCliTests },
+    { name: 'Milestone 6 Enterprise Security Pillars (All 7 Innovations)', fn: runMilestone6Tests }
   ];
 
   for (const suite of suites) {
@@ -105,6 +107,15 @@ async function main() {
       ✔ Topological Tier Concurrency & Parallel Execution (Promise.all)
       ✔ Per-Tier Wall-Clock Durations & Cryptographic Ledger Hashing
       ✔ End-to-End CLI Automation: Subprocess Orchestration, Exit Codes & DAG Flags
+      ✔ ABAC Permission Engine & Parameter Constraints (-32007 AEGIS_ACCESS_DENIED)
+      ✔ Human-in-the-Loop Approval Gate & Pending Lifecycle (-32006 AEGIS_AWAITING_APPROVAL)
+      ✔ Distributed Remote MCP Tunneling & Mutual TLS (mTLS) Mesh (-32008 AEGIS_MTLS_UNAUTHORIZED)
+      ✔ Lightweight Semantic Guardrails & Vector Cosine Similarity (SEM-001)
+      ✔ Bidirectional Tool Output Scrubber & Luhn PII Redaction ([REDACTED_BY_AEGIS_SHIELD])
+      ✔ Cryptographic Binary Merkle Tree & O(log N) Inclusion Proofs
+      ✔ WebAssembly & Isolated VM Runtime Micro-Sandboxing
+      ✔ Continuous Autonomous Red-Teaming & Dynamic Immune Auto-Defense
+      ✔ W3C Distributed Trace Context & Prometheus Metrics Exposition (/metrics)
 ==============================================================
 `);
 }

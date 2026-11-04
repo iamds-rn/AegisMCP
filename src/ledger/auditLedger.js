@@ -530,6 +530,40 @@ class AuditLedger {
     const { verifyAllAttestations } = require('./attestation');
     return verifyAllAttestations(this, secretKey);
   }
+
+  /**
+   * Generates a cryptographic binary Merkle inclusion proof for a block in the chain.
+   */
+  generateInclusionProof(blockIndex) {
+    const { MerkleTree } = require('./merkleTree');
+    const leafHashes = this.chain.map(b => b.hash);
+    if (blockIndex < 0 || blockIndex >= leafHashes.length) {
+      throw new Error(`Block index ${blockIndex} out of bounds (chain length: ${leafHashes.length})`);
+    }
+    const tree = new MerkleTree(leafHashes);
+    return tree.getInclusionProof(blockIndex);
+  }
+
+  /**
+   * Verifies an inclusion proof against the current ledger Merkle root.
+   */
+  verifyInclusionProof(proofObj) {
+    const { MerkleTree } = require('./merkleTree');
+    const leafHashes = this.chain.map(b => b.hash);
+    const tree = new MerkleTree(leafHashes);
+    const currentRoot = tree.getRoot();
+    return MerkleTree.verifyProof(proofObj.leafHash, proofObj.proof, currentRoot);
+  }
+
+  /**
+   * Returns the current root hash of the binary Merkle tree over all blocks.
+   */
+  getMerkleRoot() {
+    const { MerkleTree } = require('./merkleTree');
+    const leafHashes = this.chain.map(b => b.hash);
+    const tree = new MerkleTree(leafHashes);
+    return tree.getRoot();
+  }
 }
 
 module.exports = {

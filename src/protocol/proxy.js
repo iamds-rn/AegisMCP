@@ -19,6 +19,10 @@ const { DAGEngine } = require('../pipeline/dagEngine');
 const { DynamicRuleSynthesizer } = require('../firewall/synthesizer');
 const { ExploitPayloadGenerator } = require('../firewall/exploitGenerator');
 const { ClientConfigGenerator } = require('./configGenerator');
+const { PrometheusExporter } = require('../observability/prometheusExporter');
+const { TelemetryEngine, parseTraceparent, formatTraceparent } = require('../observability/telemetry');
+const { AdaptiveImmuneLoop } = require('../firewall/adaptiveImmuneLoop');
+const { MerkleTree } = require('../ledger/merkleTree');
 
 const DEFAULT_MAX_BODY_SIZE = 1024 * 1024; // 1MB (1,048,576 bytes)
 
@@ -43,6 +47,11 @@ class AegisProxyServer {
     this.synthesizer = new DynamicRuleSynthesizer();
     this.exploitGen = new ExploitPayloadGenerator({ synthesizer: this.synthesizer });
     this.dagEngine = new DAGEngine({ firewall: this.firewall, ledger: this.ledger });
+    this.telemetry = new TelemetryEngine();
+    this.metricsExporter = new PrometheusExporter();
+    this.approvalGate = this.firewall.approvalGate;
+    this.accessControl = this.firewall.accessControl;
+    this.immuneLoop = new AdaptiveImmuneLoop({ synthesizer: this.synthesizer });
     this.upstreamCommand = options.upstreamCommand || null;
     this.upstreamOptions = options.upstreamOptions || {};
     this.upstreamServer = null;
@@ -235,7 +244,23 @@ class AegisProxyServer {
           sanitized: !!evalResult.sanitized
         });
 
-        return createResponse(id, result);
+        // Step D: Milestone 6 Output Scrubber & PII Redaction
+        const scrubbedOutcome = this.firewall.scrubOutput(result);
+        const effectiveResult = scrubbedOutcome.result;
+        if (scrubbedOutcome.scrubbed) {
+          this.ledger.append('TOOL_OUTPUT_REDACTED', {
+            id,
+            server: serverName,
+            tool: toolName,
+            redactionCount: scrubbedOutcome.redactionCount,
+            redactions: scrubbedOutcome.redactions
+          });
+        }
+
+        this.metricsExporter.incCounter('aegis_tool_calls_total', { server: serverName, tool: toolName, status: 'success' });
+        this.metricsExporter.observeDuration('aegis_tool_duration_seconds', { server: serverName, tool: toolName }, durationMs / 1000);
+
+        return createResponse(id, effectiveResult);
       } catch (err) {
         if (timer) clearTimeout(timer);
         const durationMs = Date.now() - startTime;
@@ -489,10 +514,125 @@ class AegisProxyServer {
             return;
           }
 
+          // W3C Trace Context propagation
+          const traceparentHeader = req.headers['traceparent'];
+          const span = this.telemetry.startSpan(`HTTP ${req.method} ${url.pathname}`, { traceparent: traceparentHeader });
+          res.setHeader('traceparent', span.toTraceparent());
+          this.metricsExporter.incCounter('aegis_requests_total', { method: req.method, endpoint: url.pathname });
+
         // Health endpoint
         if (url.pathname === '/health') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'healthy', version: '1.5.0', uptime: process.uptime() }));
+          res.end(JSON.stringify({ status: 'healthy', version: '1.6.0', uptime: process.uptime() }));
+          return;
+        }
+
+        // Prometheus Metrics endpoint
+        if (url.pathname === '/metrics') {
+          res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4; charset=utf-8' });
+          res.end(this.metricsExporter.exportMetrics({ ledger: this.ledger, approvalGate: this.approvalGate }));
+          return;
+        }
+
+        // Approvals API: List Pending / All
+        if (url.pathname === '/api/approvals' && req.method === 'GET') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            pending: this.approvalGate.listPending(),
+            all: this.approvalGate.listAll()
+          }));
+          return;
+        }
+
+        // Approvals API: Approve
+        if (url.pathname.startsWith('/api/approvals/') && url.pathname.endsWith('/approve') && req.method === 'POST') {
+          const id = url.pathname.split('/')[3];
+          const body = await this.readRequestBody(req, res);
+          if (body === null) return;
+          const { approver = 'operator' } = JSON.parse(body || '{}');
+          const outcome = this.approvalGate.approve(id, approver);
+          if (outcome.success) {
+            this.ledger.append('APPROVAL_GRANTED', { approvalId: id, approver });
+          }
+          res.writeHead(outcome.success ? 200 : 400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(outcome));
+          return;
+        }
+
+        // Approvals API: Reject
+        if (url.pathname.startsWith('/api/approvals/') && url.pathname.endsWith('/reject') && req.method === 'POST') {
+          const id = url.pathname.split('/')[3];
+          const body = await this.readRequestBody(req, res);
+          if (body === null) return;
+          const { rejector = 'operator', reason = 'Operator rejected request' } = JSON.parse(body || '{}');
+          const outcome = this.approvalGate.reject(id, rejector, reason);
+          if (outcome.success) {
+            this.ledger.append('APPROVAL_REJECTED', { approvalId: id, rejector, reason });
+          }
+          res.writeHead(outcome.success ? 200 : 400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(outcome));
+          return;
+        }
+
+        // Merkle Inclusion Proof Export
+        if (url.pathname === '/api/ledger/proof/inclusion' && req.method === 'GET') {
+          const idxStr = url.searchParams.get('index') || '0';
+          const index = parseInt(idxStr, 10);
+          try {
+            const proof = this.ledger.generateInclusionProof(index);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(proof, null, 2));
+          } catch (err) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          }
+          return;
+        }
+
+        // Merkle Inclusion Proof Standalone Verification
+        if (url.pathname === '/api/ledger/verify-inclusion-proof' && req.method === 'POST') {
+          const body = await this.readRequestBody(req, res);
+          if (body === null) return;
+          try {
+            const { leafHash, proof, rootHash } = JSON.parse(body || '{}');
+            const valid = MerkleTree.verifyProof(leafHash, proof, rootHash);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ valid, leafHash, rootHash }));
+          } catch (err) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          }
+          return;
+        }
+
+        // Adaptive Immune Engine API
+        if (url.pathname === '/api/immune/status' && req.method === 'GET') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(this.immuneLoop.getStatus()));
+          return;
+        }
+
+        if (url.pathname === '/api/immune/audit' && req.method === 'POST') {
+          const result = this.immuneLoop.runFullAudit(this.hub, this.firewall, this.ledger);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(result, null, 2));
+          return;
+        }
+
+        if (url.pathname === '/api/immune/start' && req.method === 'POST') {
+          const body = await this.readRequestBody(req, res);
+          if (body === null) return;
+          const { intervalMs = 30000 } = JSON.parse(body || '{}');
+          this.immuneLoop.startContinuous(intervalMs, this.hub, this.firewall, this.ledger);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ started: true, intervalMs }));
+          return;
+        }
+
+        if (url.pathname === '/api/immune/stop' && req.method === 'POST') {
+          this.immuneLoop.stopContinuous();
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ stopped: true }));
           return;
         }
 

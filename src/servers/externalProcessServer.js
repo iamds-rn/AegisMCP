@@ -981,7 +981,7 @@ class ExternalProcessServer extends EventEmitter {
 
         killTimer = setTimeout(() => {
           try {
-            if (proc.exitCode === null && !proc.killed) {
+            if (proc.exitCode === null) {
               proc.kill('SIGKILL');
             }
           } catch {}

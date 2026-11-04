@@ -29,6 +29,7 @@ class ClientConfigGenerator {
     const proxyCmd = options.proxyCommand || null;
     const port = options.port || 3333;
     const bin = options.binPath || BIN_PATH;
+    const env = (options.env && typeof options.env === 'object') ? options.env : null;
 
     const stdioArgs = proxyCmd
       ? [bin, '--proxy', proxyCmd, '--mode', mode]
@@ -45,7 +46,8 @@ class ClientConfigGenerator {
           mcpServers: {
             [serverKey]: {
               command: 'node',
-              args: stdioArgs
+              args: stdioArgs,
+              ...(env ? { env } : {})
             }
           }
         },
@@ -60,7 +62,8 @@ class ClientConfigGenerator {
           mcpServers: {
             [serverKey]: {
               command: 'node',
-              args: stdioArgs
+              args: stdioArgs,
+              ...(env ? { env } : {})
             }
           }
         },
@@ -76,7 +79,8 @@ class ClientConfigGenerator {
             [serverKey]: {
               command: {
                 path: 'node',
-                args: stdioArgs
+                args: stdioArgs,
+                ...(env ? { env } : {})
               }
             }
           }
@@ -92,7 +96,8 @@ class ClientConfigGenerator {
           mcpServers: {
             [serverKey]: {
               command: 'node',
-              args: stdioArgs
+              args: stdioArgs,
+              ...(env ? { env } : {})
             }
           }
         },
@@ -120,10 +125,18 @@ class ClientConfigGenerator {
 
     const selected = configs[clientType.toLowerCase()];
     if (!selected) {
-      throw new Error(`Unsupported client "${clientType}". Supported: claude, cursor, zed, windsurf, http, all.`);
+      throw new Error(`Unsupported client "${clientType}". Supported: ${ClientConfigGenerator.getSupportedClients().join(', ')}.`);
     }
 
     return selected;
+  }
+
+  /**
+   * Returns list of supported client types.
+   * @returns {string[]}
+   */
+  static getSupportedClients() {
+    return ['claude', 'cursor', 'zed', 'windsurf', 'http', 'all'];
   }
 }
 

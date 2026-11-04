@@ -152,7 +152,120 @@ async function runExternalServerTests() {
   assert.strictEqual(qTools.length, 1);
   quotedExt.stop();
 
-  console.log('✅ External MCP Server stdio Proxy Tunneling: All 8 test cases passed!');
+  // 9. Empty Quote Tokenization Preservation
+  const tokensEmpty = tokenizeCommand('node script.js "" --flag \'\'');
+  assert.deepStrictEqual(tokensEmpty, ['node', 'script.js', '', '--flag', ''], 'Empty quotes must be preserved as empty string tokens');
+
+  // 10. Auto-Restart on Unexpected Exit (SIGKILL)
+  const restartServer = new ExternalProcessServer({
+    name: 'ext_restart_test',
+    command: 'node',
+    args: [mockServerPath],
+    autoRestart: true,
+    maxRetries: 3,
+    restartDelayMs: 50
+  });
+  await restartServer.start();
+  assert.strictEqual(restartServer.status, 'CONNECTED');
+
+  const proc = restartServer.process;
+  assert(proc, 'Child process must exist');
+
+  // Trigger unexpected kill and await crash & recovery
+  const crashPromise = new Promise(resolve => restartServer.once('crash', resolve));
+  proc.kill('SIGKILL');
+  await crashPromise;
+
+  // Await recovery
+  await restartServer.waitForReady(5000);
+  assert.strictEqual(restartServer.status, 'CONNECTED', 'Server should recover to CONNECTED');
+  assert(restartServer.retryCount >= 1, 'retryCount should have incremented');
+
+  // Verify it can still execute tools after recovery
+  const postRecoverRes = await restartServer.callTool('external_fetch_data', { query: 'after_restart' });
+  assert(postRecoverRes.content[0].text.includes('after_restart'));
+  restartServer.stop();
+
+  // 11. Max Restarts Exhaustion
+  const exhaustServer = new ExternalProcessServer({
+    name: 'ext_exhaust_test',
+    command: 'node',
+    args: [mockServerPath],
+    autoRestart: true,
+    maxRetries: 1,
+    restartDelayMs: 20
+  });
+  await exhaustServer.start();
+
+  let exhaustedEmitted = false;
+  exhaustServer.on('restartExhausted', () => {
+    exhaustedEmitted = true;
+  });
+
+  // Crash once and wait for recovery (retryCount becomes 1)
+  const crash1 = new Promise(resolve => exhaustServer.once('crash', resolve));
+  exhaustServer.process.kill('SIGKILL');
+  await crash1;
+  await exhaustServer.waitForReady(5000);
+  assert.strictEqual(exhaustServer.status, 'CONNECTED');
+
+  // Crash second time (exhausts maxRetarts=1)
+  const exhaustedPromise = new Promise(resolve => exhaustServer.once('restartExhausted', resolve));
+  exhaustServer.process.kill('SIGKILL');
+  await exhaustedPromise;
+
+  assert.strictEqual(exhaustServer.status, 'FAILED', 'Status should transition to FAILED upon retry exhaustion');
+  assert.strictEqual(exhaustedEmitted, true, 'restartExhausted event must be emitted');
+  exhaustServer.stop();
+
+  // 12. Graceful Shutdown with SIGKILL Fallback
+  const fs = require('node:fs');
+  const stubServerPath = path.join(__dirname, 'stubborn-server.tmp.js');
+  const stubbornScript = `
+    const readline = require('readline');
+    const rl = readline.createInterface({ input: process.stdin, terminal: false });
+    const timer = setInterval(() => {}, 10000);
+    process.on('SIGTERM', () => {
+      // Stubbornly ignore SIGTERM
+    });
+    rl.on('line', (line) => {
+      try {
+        const msg = JSON.parse(line.trim());
+        if (msg.method === 'initialize') {
+          process.stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            id: msg.id,
+            result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'stubborn', version: '1.0' } }
+          }) + '\\n');
+        } else if (msg.method === 'tools/list') {
+          process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { tools: [] } }) + '\\n');
+        }
+      } catch {}
+    });
+  `;
+  fs.writeFileSync(stubServerPath, stubbornScript);
+
+  try {
+    const stubbornServer = new ExternalProcessServer({
+      name: 'ext_stubborn',
+      command: 'node',
+      args: [stubServerPath],
+      autoRestart: false
+    });
+    await stubbornServer.start();
+    assert.strictEqual(stubbornServer.status, 'CONNECTED');
+    const stubbornProc = stubbornServer.process;
+
+    const exitPromise = new Promise(resolve => stubbornProc.once('exit', resolve));
+    stubbornServer.stop(100);
+    await exitPromise;
+
+    assert.strictEqual(stubbornProc.killed || stubbornProc.exitCode !== null, true, 'Stubborn process must be killed by SIGKILL escalation');
+  } finally {
+    try { fs.unlinkSync(stubServerPath); } catch {}
+  }
+
+  console.log('✅ External MCP Server stdio Proxy Tunneling: All 12 test cases passed!');
 }
 
 module.exports = { runExternalServerTests };
