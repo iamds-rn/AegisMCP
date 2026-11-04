@@ -307,14 +307,23 @@ class ProtocolFuzzer {
           passedCount++; // Blocking an adversarial attack is a success!
         } else {
           // Send to tool invoker
-          const response = await Promise.race([
-            invokerFn(tool.name, tc.payload),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('EXECUTION_TIMEOUT')), this.timeoutMs))
-          ]);
+          let timer = null;
+          try {
+            const timeoutPromise = new Promise((_, reject) => {
+              timer = setTimeout(() => reject(new Error('EXECUTION_TIMEOUT')), this.timeoutMs);
+              if (typeof timer.unref === 'function') timer.unref();
+            });
+            await Promise.race([
+              invokerFn(tool.name, tc.payload),
+              timeoutPromise
+            ]);
 
-          testResult.status = 'HANDLED_GRACEFULLY';
-          testResult.details = 'Target executed or validated safely without fatal crash.';
-          passedCount++;
+            testResult.status = 'HANDLED_GRACEFULLY';
+            testResult.details = 'Target executed or validated safely without fatal crash.';
+            passedCount++;
+          } finally {
+            if (timer) clearTimeout(timer);
+          }
         }
       } catch (err) {
         const msg = (err && err.message) ? err.message.toLowerCase() : '';

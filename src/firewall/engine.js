@@ -84,6 +84,13 @@ class TokenBucketRateLimiter {
   _getOrCreateBucket(key, now) {
     let bucket = this.buckets.get(key);
     if (!bucket) {
+      if (this.buckets.size >= 5000) {
+        this.prune();
+        if (this.buckets.size >= 5000) {
+          const oldestKey = this.buckets.keys().next().value;
+          if (oldestKey) this.buckets.delete(oldestKey);
+        }
+      }
       const custom = this.toolLimits[key] || {};
       const capacity = custom.capacity || this.capacity;
       const refillRate = custom.refillRate || this.refillRate;

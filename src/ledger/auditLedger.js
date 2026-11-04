@@ -355,13 +355,17 @@ class AuditLedger {
         tampered: brokenBlock.event,
         changedKeys: []
       };
-      const allKeys = new Set([...Object.keys(originalEvent), ...Object.keys(brokenBlock.event)]);
+      const origKeys = originalEvent && typeof originalEvent === 'object' ? Object.keys(originalEvent) : [];
+      const brokenKeys = brokenBlock && brokenBlock.event && typeof brokenBlock.event === 'object' ? Object.keys(brokenBlock.event) : [];
+      const allKeys = new Set([...origKeys, ...brokenKeys]);
       for (const k of allKeys) {
-        if (JSON.stringify(originalEvent[k]) !== JSON.stringify(brokenBlock.event[k])) {
+        const origVal = originalEvent && typeof originalEvent === 'object' ? originalEvent[k] : undefined;
+        const brokenVal = brokenBlock && brokenBlock.event && typeof brokenBlock.event === 'object' ? brokenBlock.event[k] : undefined;
+        if (JSON.stringify(origVal) !== JSON.stringify(brokenVal)) {
           fieldDiff.changedKeys.push({
             key: k,
-            expected: originalEvent[k],
-            observed: brokenBlock.event[k]
+            expected: origVal,
+            observed: brokenVal
           });
         }
       }
@@ -404,13 +408,14 @@ class AuditLedger {
 
     for (let i = 0; i <= targetIndex; i++) {
       const b = fullChain[i];
-      const type = b.event.type || 'UNKNOWN';
+      const isObj = b.event && typeof b.event === 'object';
+      const type = (isObj && b.event.type) ? b.event.type : 'UNKNOWN';
       eventCounts[type] = (eventCounts[type] || 0) + 1;
 
-      if (b.event.tool) {
+      if (isObj && b.event.tool) {
         toolsCalled.add(b.event.tool);
       }
-      if (type === 'FIREWALL_BLOCK') {
+      if (type === 'FIREWALL_BLOCK' && isObj) {
         firewallBlocks.push({
           blockIndex: b.index,
           timestamp: b.timestamp,
@@ -449,14 +454,17 @@ class AuditLedger {
       blockCount: fullChain.length,
       headHash: this.getLatestBlock().hash,
       genesisHash: fullChain[0].hash,
-      blocks: fullChain.map(b => ({
-        index: b.index,
-        timestamp: b.timestamp,
-        prevHash: b.prevHash,
-        hash: b.hash,
-        eventType: b.event.type,
-        eventSummary: b.event.tool || b.event.description || b.event.signature || 'EVENT'
-      }))
+      blocks: fullChain.map(b => {
+        const isObj = b.event && typeof b.event === 'object';
+        return {
+          index: b.index,
+          timestamp: b.timestamp,
+          prevHash: b.prevHash,
+          hash: b.hash,
+          eventType: (isObj && b.event.type) || 'EVENT',
+          eventSummary: (isObj && (b.event.tool || b.event.description || b.event.signature)) || 'EVENT'
+        };
+      })
     };
   }
 

@@ -22,6 +22,9 @@ class ClientConfigGenerator {
    * @returns {object} Config object with client information and JSON snippets
    */
   static generate(clientType, options = {}) {
+    if (!clientType || typeof clientType !== 'string') {
+      throw new Error('Client type must be a valid string (e.g. claude, cursor, zed, windsurf, http, all).');
+    }
     const mode = options.mode || 'ENFORCE';
     const proxyCmd = options.proxyCommand || null;
     const port = options.port || 3333;

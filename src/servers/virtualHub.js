@@ -246,9 +246,11 @@ class VirtualMemoryServer {
         const { key, value, tags = [] } = args || {};
         if (!key || typeof key !== 'string' || !key.trim()) throw new Error('Parameter "key" is required');
         if (value === undefined || value === null) throw new Error('Parameter "value" is required');
+        const rawTags = Array.isArray(tags) ? tags : [tags];
+        const stringTags = rawTags.map(t => (t !== undefined && t !== null) ? String(t) : '');
         this.store.set(String(key), {
           value,
-          tags: Array.isArray(tags) ? tags : [String(tags)],
+          tags: stringTags,
           updatedAt: new Date().toISOString()
         });
         return { content: [{ type: 'text', text: `Key "${key}" successfully saved.` }] };
@@ -271,7 +273,7 @@ class VirtualMemoryServer {
         const results = [];
         for (const [k, v] of this.store.entries()) {
           const valStr = JSON.stringify(v.value).toLowerCase();
-          const tagMatch = v.tags.some(t => t.toLowerCase().includes(query));
+          const tagMatch = Array.isArray(v.tags) && v.tags.some(t => String(t).toLowerCase().includes(query));
           if (k.toLowerCase().includes(query) || valStr.includes(query) || tagMatch) {
             results.push({ key: k, entry: v });
           }

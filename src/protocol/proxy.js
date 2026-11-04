@@ -65,6 +65,10 @@ class AegisProxyServer {
    * Processes a single JSON-RPC 2.0 request through the Aegis security pipeline.
    */
   async handleJsonRpc(reqObj) {
+    if (!reqObj || typeof reqObj !== 'object' || Array.isArray(reqObj)) {
+      return createError(null, ERROR_CODES.INVALID_REQUEST, 'Invalid Request: expected a JSON-RPC request object');
+    }
+
     const { id, method, params } = reqObj;
 
     // 0. Notification Absorption
@@ -455,18 +459,32 @@ class AegisProxyServer {
   startHttp(port = this.port) {
     return new Promise((resolve, reject) => {
       this.httpServer = http.createServer(async (req, res) => {
-        // Enable CORS
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        // Prevent unhandled stream error crashes on client abrupt disconnect
+        req.on('error', () => {});
+        res.on('error', () => {});
 
-        if (req.method === 'OPTIONS') {
-          res.writeHead(204);
-          res.end();
-          return;
-        }
+        try {
+          // Enable CORS
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-        const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+          if (req.method === 'OPTIONS') {
+            res.writeHead(204);
+            res.end();
+            return;
+          }
+
+          let url;
+          try {
+            const rawHost = req.headers.host || 'localhost';
+            const safeHost = rawHost.includes('[') && !rawHost.includes(']') ? 'localhost' : rawHost;
+            url = new URL(req.url, `http://${safeHost}`);
+          } catch {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Bad Request: Malformed Host or URL' }));
+            return;
+          }
 
         // Health endpoint
         if (url.pathname === '/health') {
@@ -910,13 +928,29 @@ class AegisProxyServer {
             '.svg': 'image/svg+xml'
           };
           res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'text/plain' });
-          fs.createReadStream(filePath).pipe(res);
+          const fileStream = fs.createReadStream(filePath);
+          fileStream.on('error', () => {
+            if (!res.headersSent) {
+              res.writeHead(500, { 'Content-Type': 'text/plain' });
+              res.end('Internal Server Error');
+            }
+          });
+          fileStream.pipe(res);
+          res.on('close', () => {
+            fileStream.destroy();
+          });
           return;
         }
 
         res.writeHead(404, { 'Content-Type': 'text/plain' });
         res.end('Not Found');
-      });
+      } catch (serverErr) {
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: serverErr.message || 'Internal Server Error' }));
+        }
+      }
+    });
 
       this.httpServer.listen(port, () => {
         const assignedPort = this.httpServer.address().port;
