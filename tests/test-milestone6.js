@@ -113,6 +113,44 @@ async function runMilestone6Tests() {
     assert.strictEqual(rejectRes.success, true);
     assert.strictEqual(rejectRes.record.status, 'REJECTED');
 
+    // 1.6 Additional Edge Cases & Invariants
+    const disabledAc = new AccessControlEngine({ enabled: false });
+    assert.strictEqual(disabledAc.checkPermission({ tool: 'any' }).allowed, true);
+
+    const noTool = ac.checkPermission({ role: 'admin', tool: null });
+    assert.strictEqual(noTool.allowed, false);
+    assert.strictEqual(noTool.code, -32007);
+
+    const strictAc = new AccessControlEngine({ defaultPolicy: 'deny' });
+    const unknownRole = strictAc.checkPermission({ role: 'non_existent_role', tool: 'any_tool' });
+    assert.strictEqual(unknownRole.allowed, false);
+    assert.strictEqual(unknownRole.code, -32007);
+
+    const customAc = new AccessControlEngine();
+    customAc.registerRole('deployer', {
+      allow: ['*'],
+      constraints: {
+        'service:deploy': {
+          env: /^prod-[a-z]+$/
+        },
+        'service:crash': () => { throw new Error('Simulated constraint failure'); }
+      }
+    });
+    assert.strictEqual(customAc.checkPermission({ role: 'deployer', server: 'service', tool: 'deploy', params: { env: 'prod-us' } }).allowed, true);
+    assert.strictEqual(customAc.checkPermission({ role: 'deployer', server: 'service', tool: 'deploy', params: { env: 'dev-local' } }).allowed, false);
+    assert.strictEqual(customAc.checkPermission({ role: 'deployer', server: 'service', tool: 'crash' }).allowed, false);
+
+    const shortGate = new ApprovalGate({ ttlMs: 1 });
+    const expReq = shortGate.requestApproval({ server: 'test', tool: 'drop_table', ttlMs: 1 });
+    await new Promise(r => setTimeout(r, 10));
+    assert.strictEqual(shortGate.getApproval(expReq.approvalId).status, 'EXPIRED');
+    assert.strictEqual(shortGate.listPending().length, 0);
+    assert.ok(shortGate.listAll().length >= 1);
+    shortGate.cleanupExpired();
+    assert.strictEqual(gate.getApproval('unknown_id'), null);
+    assert.strictEqual(gate.approve('unknown_id').success, false);
+    assert.strictEqual(gate.reject('unknown_id').success, false);
+
     console.log('    ✔ ABAC & Approval Gate unit tests PASSED');
   }
 
@@ -280,6 +318,12 @@ async function runMilestone6Tests() {
     const ledgerProof = ledger.generateInclusionProof(1);
     assert.strictEqual(ledger.verifyInclusionProof(ledgerProof), true);
 
+    // Empty Merkle tree and boundary checks
+    const emptyTree = new MerkleTree([]);
+    assert.ok(emptyTree.getRoot() !== null);
+    assert.throws(() => tree.getInclusionProof(-1), /out of bounds/);
+    assert.throws(() => tree.getInclusionProof(999), /out of bounds/);
+
     console.log('    ✔ Merkle Tree generation & O(log N) inclusion proofs PASSED');
   }
 
@@ -294,12 +338,38 @@ async function runMilestone6Tests() {
     assert.strictEqual(wasmRes.result, 42, 'Wasm sandbox must return correct sum 42');
     assert.strictEqual(wasmRes.memoryPages, 1);
 
-    // 5.2 Isolated VM Sandbox
+    // 5.2 Invalid WebAssembly module & missing export handling
+    let wasmCorrupt = false;
+    try {
+      await wasmSandbox.execute(Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x99]), 'add');
+    } catch (err) {
+      wasmCorrupt = true;
+      assert.strictEqual(err.code, -32010);
+    }
+    assert.strictEqual(wasmCorrupt, true);
+
+    let wasmMissingFunc = false;
+    try {
+      await wasmSandbox.execute(SAMPLE_WASM_BINARY, 'unknown_fn');
+    } catch (err) {
+      wasmMissingFunc = true;
+      assert.strictEqual(err.code, -32010);
+    }
+    assert.strictEqual(wasmMissingFunc, true);
+
+    // 5.3 SandboxManager orchestrator
+    const mgr = new SandboxManager();
+    const mgrWasm = await mgr.runWasm(SAMPLE_WASM_BINARY, 'add', [10, 20]);
+    assert.strictEqual(mgrWasm.result, 30);
+    const mgrScript = mgr.runScript('100 + offset', { offset: 50 });
+    assert.strictEqual(mgrScript.result, 150);
+
+    // 5.4 Isolated VM Sandbox
     const vmSandbox = new IsolatedVmSandbox({ timeoutMs: 500 });
     const scriptRes = vmSandbox.execute('const x = 10; const y = 20; x * y + offset;', { offset: 5 });
     assert.strictEqual(scriptRes.result, 205);
 
-    // 5.3 Sandbox Timeout Interception
+    // 5.5 Sandbox Timeout Interception
     let timedOut = false;
     try {
       vmSandbox.execute('while(true) {}');
@@ -333,6 +403,16 @@ async function runMilestone6Tests() {
     assert.strictEqual(auditRes.mutationsTested > 0, true);
     assert.strictEqual(immune.getStatus().metrics.mutationsTested > 0, true);
 
+    // Immune loop background lifecycle
+    const immuneHub = new VirtualHub();
+    immune.startContinuous(100, immuneHub, firewall, ledger);
+    assert.strictEqual(immune.isRunning, true);
+    immune.stopContinuous();
+    assert.strictEqual(immune.isRunning, false);
+
+    const fullAudit = immune.runFullAudit(immuneHub, firewall, ledger);
+    assert.ok(fullAudit.totalToolsAudited > 0);
+
     console.log('    ✔ Adaptive Immune Loop & Mutation Engine PASSED');
   }
 
@@ -355,11 +435,24 @@ async function runMilestone6Tests() {
     const telemetry = new TelemetryEngine();
     const span = telemetry.startSpan('mcp.tool_call', { traceparent: header });
     span.setAttribute('tool.name', 'virtual_fs:read_file');
+    span.setAttributes({ 'peer.service': 'node-client' });
+    span.addEvent('cache_miss', { latency_ms: 1.2 });
     span.end();
     assert.strictEqual(span.status, 'OK');
     assert.ok(span.durationMs >= 0);
     telemetry.recordSpan(span);
-    assert.strictEqual(telemetry.getRecentSpans().length, 1);
+
+    // Exception tracking on span
+    const errSpan = telemetry.startSpan('mcp.failing_call');
+    errSpan.recordException(new Error('Simulated upstream failure'));
+    errSpan.end();
+    assert.strictEqual(errSpan.status, 'ERROR');
+    telemetry.recordSpan(errSpan);
+
+    assert.strictEqual(telemetry.getRecentSpans().length, 2);
+    assert.ok(telemetry.getRecentSpans().map(s => s.toJSON()).length >= 2);
+    telemetry.clear();
+    assert.strictEqual(telemetry.getRecentSpans().length, 0);
 
     // 7.3 Prometheus Exporter
     const prom = new PrometheusExporter();
