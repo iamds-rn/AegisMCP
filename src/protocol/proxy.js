@@ -16,6 +16,8 @@ const { AuditLedger } = require('../ledger/auditLedger');
 const { VirtualHub } = require('../servers/virtualHub');
 const { ProtocolFuzzer } = require('../fuzzer/fuzzer');
 const { DAGEngine } = require('../pipeline/dagEngine');
+const { DynamicRuleSynthesizer } = require('../firewall/synthesizer');
+const { ClientConfigGenerator } = require('./configGenerator');
 
 class AegisProxyServer {
   constructor(options = {}) {
@@ -24,7 +26,10 @@ class AegisProxyServer {
     this.ledger = options.ledger || new AuditLedger();
     this.hub = options.hub || new VirtualHub();
     this.fuzzer = new ProtocolFuzzer();
+    this.synthesizer = new DynamicRuleSynthesizer();
     this.dagEngine = new DAGEngine({ firewall: this.firewall, ledger: this.ledger });
+    this.upstreamCommand = options.upstreamCommand || null;
+    this.upstreamServer = null;
     this.httpServer = null;
     this.webDir = path.resolve(__dirname, '../../web');
   }
@@ -62,11 +67,14 @@ class AegisProxyServer {
     if (method === 'tools/list') {
       const allTools = this.hub.listAllTools();
       return createResponse(id, {
-        tools: allTools.map(t => ({
-          name: `${t.serverName}__${t.name}`,
-          description: `[${t.serverName}] ${t.description}`,
-          inputSchema: t.inputSchema
-        }))
+        tools: allTools.map(t => {
+          const isUpstream = this.upstreamServer && t.serverName === this.upstreamServer.name;
+          return {
+            name: isUpstream ? t.name : `${t.serverName}__${t.name}`,
+            description: `[${t.serverName}] ${t.description}`,
+            inputSchema: t.inputSchema
+          };
+        })
       });
     }
 
@@ -79,12 +87,20 @@ class AegisProxyServer {
       const toolArguments = (params && params.arguments && typeof params.arguments === 'object') ? params.arguments : {};
 
       // Parse server and tool names
-      let serverName = 'virtual_filesystem';
+      let serverName = null;
       let toolName = rawName;
       if (rawName.includes('__')) {
         const parts = rawName.split('__');
         serverName = parts[0];
-        toolName = parts[1];
+        toolName = parts.slice(1).join('__');
+      } else {
+        if (this.upstreamServer) {
+          serverName = this.upstreamServer.name;
+        } else {
+          const allTools = this.hub.listAllTools();
+          const match = allTools.find(t => t.name === rawName);
+          serverName = match ? match.serverName : 'virtual_filesystem';
+        }
       }
 
       // Step A: Audit Inbound Tool Call Attempt
@@ -149,7 +165,22 @@ class AegisProxyServer {
   /**
    * Starts the stdio transport listener for CLI / local agent pairing.
    */
-  startStdio() {
+  async startStdio() {
+    if (this.upstreamCommand) {
+      try {
+        this.upstreamServer = await this.hub.registerExternalServer({
+          name: 'upstream',
+          command: this.upstreamCommand
+        });
+        this.ledger.append('UPSTREAM_TUNNEL_INITIALIZED', {
+          command: this.upstreamCommand,
+          toolsCount: this.upstreamServer.getTools().length
+        });
+      } catch (err) {
+        process.stderr.write(`[AegisMCP] Error connecting upstream server: ${err.message}\n`);
+      }
+    }
+
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
@@ -172,7 +203,7 @@ class AegisProxyServer {
       }
     });
 
-    this.ledger.append('SERVER_START_STDIO', { pid: process.pid });
+    this.ledger.append('SERVER_START_STDIO', { pid: process.pid, proxiedUpstream: !!this.upstreamCommand });
   }
 
   /**
@@ -224,6 +255,234 @@ class AegisProxyServer {
         if (url.pathname === '/api/ledger/proof') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(this.ledger.exportProof(), null, 2));
+          return;
+        }
+
+        // Ledger Forensics endpoint (Tamper localization & blast radius)
+        if (url.pathname === '/api/ledger/forensics') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(this.ledger.locateTamper()));
+          return;
+        }
+
+        // Ledger Tamper Simulation endpoint
+        if (req.method === 'POST' && url.pathname === '/api/ledger/tamper') {
+          let body = '';
+          req.on('data', chunk => { body += chunk; });
+          req.on('end', () => {
+            try {
+              const { index, event } = JSON.parse(body || '{}');
+              const targetIdx = index !== undefined ? parseInt(index, 10) : 1;
+              this.ledger.tamper(targetIdx, event || { tampered: true, attacker: 'Adversary Simulation', timestamp: new Date().toISOString() });
+              const forensics = this.ledger.locateTamper();
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: true, tamperedIndex: targetIdx, forensics }));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+          return;
+        }
+
+        // Ledger Restore endpoint
+        if (req.method === 'POST' && url.pathname === '/api/ledger/restore') {
+          let body = '';
+          req.on('data', chunk => { body += chunk; });
+          req.on('end', () => {
+            try {
+              const { index } = JSON.parse(body || '{}');
+              let result;
+              if (index !== undefined) {
+                const restored = this.ledger.restoreChain(parseInt(index, 10));
+                result = { restoredIndex: index, success: restored, verification: this.ledger.verify() };
+              } else {
+                result = this.ledger.restoreAll();
+              }
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(result));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+          return;
+        }
+
+        // Historical Ledger Time-Travel Snapshot endpoint
+        if (url.pathname.startsWith('/api/ledger/snapshot/')) {
+          const idxStr = url.pathname.replace('/api/ledger/snapshot/', '');
+          const idx = parseInt(idxStr, 10);
+          try {
+            const snap = this.ledger.getSnapshotAtBlock(idx);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(snap));
+          } catch (err) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          }
+          return;
+        }
+
+        // Servers List endpoint
+        if (url.pathname === '/api/servers') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            servers: this.hub.listServers(),
+            tools: this.hub.listAllTools()
+          }));
+          return;
+        }
+
+        // External Server Register endpoint
+        if (req.method === 'POST' && url.pathname === '/api/servers/register') {
+          let body = '';
+          req.on('data', chunk => { body += chunk; });
+          req.on('end', async () => {
+            try {
+              const { name, command, args, url: serverUrl } = JSON.parse(body || '{}');
+              if (!name || (!command && !serverUrl)) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Field "name" and either "command" or "url" are required.' }));
+                return;
+              }
+              const server = await this.hub.registerExternalServer({
+                name,
+                command,
+                args: Array.isArray(args) ? args : [],
+                url: serverUrl
+              });
+              this.ledger.append('EXTERNAL_SERVER_REGISTERED', {
+                name,
+                command: command || serverUrl,
+                toolsCount: server.getTools().length
+              });
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: true, server: { name, tools: server.getTools() } }));
+            } catch (err) {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+          return;
+        }
+
+        // Server Remove endpoint
+        if (req.method === 'POST' && url.pathname === '/api/servers/remove') {
+          let body = '';
+          req.on('data', chunk => { body += chunk; });
+          req.on('end', () => {
+            try {
+              const { name } = JSON.parse(body || '{}');
+              const removed = this.hub.removeServer(name);
+              this.ledger.append('SERVER_REMOVED', { name, success: removed });
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: removed }));
+            } catch (err) {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+          return;
+        }
+
+        // Firewall Rules List endpoint
+        if (url.pathname === '/api/firewall/rules') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            mode: this.firewall.mode,
+            rules: this.firewall.getAllRules()
+          }));
+          return;
+        }
+
+        // Firewall Rule Toggle endpoint
+        if (req.method === 'POST' && url.pathname === '/api/firewall/rules/toggle') {
+          let body = '';
+          req.on('data', chunk => { body += chunk; });
+          req.on('end', () => {
+            try {
+              const { ruleId } = JSON.parse(body || '{}');
+              const state = this.firewall.toggleRule(ruleId);
+              this.ledger.append('FIREWALL_RULE_TOGGLED', { ruleId, enabled: state });
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ruleId, enabled: state }));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+          return;
+        }
+
+        // Dynamic Rule Synthesizer endpoint
+        if (req.method === 'POST' && url.pathname === '/api/firewall/synthesize') {
+          let body = '';
+          req.on('data', chunk => { body += chunk; });
+          req.on('end', () => {
+            try {
+              const { tool, toolName, serverName, pattern, signatureName, severity } = JSON.parse(body || '{}');
+              let targetTool = tool;
+              if (!targetTool && toolName) {
+                const sName = serverName || 'virtual_filesystem';
+                const s = this.hub.getServer(sName);
+                if (s) {
+                  targetTool = s.getTools().find(t => t.name === toolName);
+                }
+              }
+              let rules = [];
+              if (targetTool) {
+                rules = this.synthesizer.synthesizeRulesForTool(targetTool);
+              } else if (pattern) {
+                const r = this.synthesizer.synthesizeRuleFromPattern(signatureName || 'Dynamic Custom Rule', pattern, severity || 'HIGH', toolName);
+                rules = [r];
+              }
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ rules }));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+          return;
+        }
+
+        // Add Custom Rule endpoint
+        if (req.method === 'POST' && url.pathname === '/api/firewall/rules/add') {
+          let body = '';
+          req.on('data', chunk => { body += chunk; });
+          req.on('end', () => {
+            try {
+              const { id, name, severity, pattern, targetTool } = JSON.parse(body || '{}');
+              const rule = this.synthesizer.synthesizeRuleFromPattern(name || 'Custom Dynamic Rule', pattern, severity || 'HIGH', targetTool);
+              if (id) rule.id = id;
+              this.firewall.addCustomRule(rule);
+              this.ledger.append('CUSTOM_RULE_HOT_LOADED', { ruleId: rule.id, name: rule.name });
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: true, rule: { id: rule.id, name: rule.name, severity: rule.severity } }));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+          return;
+        }
+
+        // Client Configuration Generator endpoint
+        if (url.pathname.startsWith('/api/configs/')) {
+          const client = url.pathname.replace('/api/configs/', '');
+          try {
+            const conf = ClientConfigGenerator.generate(client, {
+              port: this.port,
+              mode: this.firewall.mode,
+              proxyCommand: this.upstreamCommand
+            });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(conf, null, 2));
+          } catch (err) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          }
           return;
         }
 
@@ -359,6 +618,9 @@ class AegisProxyServer {
   stop() {
     if (this.httpServer) {
       this.httpServer.close();
+    }
+    if (this.hub) {
+      this.hub.shutdownAll();
     }
   }
 }

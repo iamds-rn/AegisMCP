@@ -87,3 +87,45 @@ AegisMCP enables chaining tools across multiple servers into deterministic execu
 - **Topological Sorting**: Uses Kahn's algorithm to analyze parameter dependencies (`{{nodes.source.output.field}}`) and execute nodes in valid causal order.
 - **Cycle Detection**: Identifies circular references and halts execution before runtime deadlocks occur.
 - **In-Flight Firewall Gate**: Every intermediate step in the pipeline is independently validated against security policies before dispatch.
+
+---
+
+## 5. Live External MCP Server stdio Proxy Tunneling
+
+AegisMCP functions as an upstream zero-trust proxy for real-world external MCP server processes:
+- **Child Process Supervision**: Spawns and manages external MCP server processes over `stdio` (`child_process.spawn`).
+- **Autonomous Protocol Handshake**: Executes JSON-RPC 2.0 protocol negotiation (`initialize` and notifications `notifications/initialized`).
+- **Dynamic Tool Federation**: Queries upstream `tools/list` and namespaces external tools alongside local virtual tools.
+- **Bi-Directional Inspection**: Inbound requests from the AI client and outbound tool responses from the server are passed through the zero-trust firewall and Merkle audit ledger before delivery.
+- **Fail-Safe Process Management**: Tracks health pings, request timeouts, and clean SIGTERM/SIGKILL lifecycle termination.
+
+---
+
+## 6. Time-Travel Ledger Forensics & Tamper Localization
+
+AegisMCP provides advanced cryptographic forensics capabilities:
+- **Tamper Pinpointing (`locateTamper()`)**: Recursively audits the SHA-256 Merkle chain to identify the exact block index where tampering occurred.
+- **Blast Radius & Cascade Impact**: Computes total affected downstream blocks, unverified audit window duration, and lists affected tool names.
+- **Deep Property Diffing**: Identifies modified keys, previous hash violations, and corrupted event data.
+- **Time-Travel Snapshots (`getSnapshotAtBlock(index)`)**: Reconstructs the exact historical state of the system up to any block height without replaying entire logs.
+- **1-Click Cryptographic Healing (`restoreChain(index)`)**: Recalculates cryptographic hash pointers from a clean state or removes invalid blocks to re-establish integrity.
+
+---
+
+## 7. Dynamic Security Rule Synthesizer
+
+- Analyzes tool JSON schemas dynamically to generate zero-trust validation constraints.
+- Hot-reloads threat signatures into the live proxy pipeline with zero downtime.
+- Emits real-time telemetry into the Web Studio threat matrix.
+
+---
+
+## 8. AI Client Configuration Generator
+
+Outputs ready-to-paste configurations tailored for leading AI development environments:
+- **Claude Desktop**: Native `claude_desktop_config.json` with stdio process commands.
+- **Cursor**: `.cursor/mcp.json` structure for editor integration.
+- **Zed**: `settings.json` context server block.
+- **Windsurf**: `mcp_config.json` schema.
+- **HTTP/SSE Gateway**: Direct curl / web-ready endpoint definitions.
+

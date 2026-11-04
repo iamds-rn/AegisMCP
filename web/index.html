@@ -22,7 +22,7 @@
       <div class="logo-text">
         <div class="title-row">
           <span class="brand-title">AEGIS<span class="accent">MCP</span></span>
-          <span class="version-tag">v1.0.0</span>
+          <span class="version-tag">v1.1.0</span>
           <span class="protocol-badge">MCP 2024-11-05</span>
         </div>
         <span class="brand-tagline">Zero-Trust Tool Firewall & Resilience Studio</span>
@@ -43,6 +43,12 @@
       </button>
       <button class="btn-scenario" id="scenario-tamper-btn" title="Tamper with Ledger to Test Cryptographic Defense">
         <span class="icon">🔐</span> Tamper Test
+      </button>
+      <button class="btn-scenario" id="scenario-forensics-btn" title="Forensics & Time-Travel Inspector">
+        <span class="icon">🔍</span> Forensics
+      </button>
+      <button class="btn-scenario" id="scenario-configs-btn" title="1-Click Client Setup Configs">
+        <span class="icon">📋</span> Client Configs
       </button>
     </div>
 
@@ -81,6 +87,10 @@
           <span class="tab-icon">🛡️</span>
           <span class="tab-text">Firewall Rules</span>
         </button>
+        <button class="nav-tab" data-tab="tab-synthesizer">
+          <span class="tab-icon">🧬</span>
+          <span class="tab-text">Rule Synthesizer</span>
+        </button>
         <button class="nav-tab" data-tab="tab-fuzzer">
           <span class="tab-icon">🔬</span>
           <span class="tab-text">Protocol Fuzzer</span>
@@ -92,6 +102,18 @@
         <button class="nav-tab" data-tab="tab-ledger">
           <span class="tab-icon">🔐</span>
           <span class="tab-text">Audit Ledger</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-forensics">
+          <span class="tab-icon">🔍</span>
+          <span class="tab-text">Ledger Forensics</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-configs">
+          <span class="tab-icon">📋</span>
+          <span class="tab-text">Client Configs</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-servers">
+          <span class="tab-icon">🌐</span>
+          <span class="tab-text">Proxy Fleet</span>
         </button>
       </nav>
 
@@ -481,6 +503,204 @@
             <div class="blocks-container" id="blocks-chain-container">
               <!-- Dynamically populated blocks -->
             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 7: TIME-TRAVEL FORENSICS & TAMPER LOCALIZATION -->
+      <section class="tab-pane" id="tab-forensics">
+        <div class="forensics-container">
+          <!-- Forensics Header Banner -->
+          <div class="panel">
+            <div class="panel-header">
+              <div class="ledger-header-group">
+                <span class="panel-title">Cryptographic Forensics & Tamper Localization</span>
+                <span class="blast-radius-badge pristine" id="forensic-status-badge">STATUS: PRISTINE</span>
+              </div>
+              <div class="ledger-controls">
+                <button class="btn-danger" id="forensic-tamper-btn">
+                  <span class="icon">⚠️</span> Adversary Tamper Attack
+                </button>
+                <button class="btn-primary" id="forensic-restore-btn">
+                  <span class="icon">✨</span> Cryptographic Healing & Restore
+                </button>
+              </div>
+            </div>
+
+            <!-- Invalidation & Blast Radius Card -->
+            <div class="merkle-banner" id="forensic-summary-box" style="margin-top: 14px;">
+              <div style="font-size: 13px; line-height: 1.6;" id="forensic-summary-text">
+                All Merkle blocks verified intact. Continuous SHA-256 hash pointer linkage verified with zero cryptographic drift.
+              </div>
+            </div>
+
+            <!-- Tampered Field Diff View -->
+            <div id="forensic-diff-view" style="display: none; margin-top: 14px;">
+              <div class="section-subhead" style="color: var(--accent-crimson);">DISCREPANCY FORENSIC DIFF</div>
+              <table class="diff-table" id="forensic-diff-table">
+                <thead>
+                  <tr>
+                    <th>Field Key</th>
+                    <th>Canonical Value</th>
+                    <th>Tampered / Injected Value</th>
+                  </tr>
+                </thead>
+                <tbody id="forensic-diff-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Time-Travel Historical Inspector -->
+          <div class="timeline-scrubber-panel">
+            <div class="panel-header">
+              <span class="panel-title">Historical Time-Travel Block Scrubber</span>
+              <span class="badge" id="scrubber-index-label">Block #0 (Genesis)</span>
+            </div>
+            <p style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">
+              Scrub across the timeline to reconstruct the exact system state, active alerts, and metrics at any point in the Merkle ledger history.
+            </p>
+            <div class="scrubber-controls">
+              <button class="btn-sm" id="scrub-prev-btn">◀ Previous</button>
+              <input type="range" class="timeline-slider" id="timeline-slider" min="0" max="0" value="0">
+              <button class="btn-sm" id="scrub-next-btn">Next ▶</button>
+            </div>
+
+            <!-- Historical State Snapshot Card -->
+            <div style="margin-top: 16px; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 14px;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                <strong style="font-size: 12px; color: var(--accent-cyan);" id="snapshot-event-type">EVENT: GENESIS</strong>
+                <span style="font-size: 11px; font-family: var(--font-mono); color: var(--text-muted);" id="snapshot-timestamp"></span>
+              </div>
+              <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); word-break: break-all; margin-bottom: 8px;">
+                HASH: <span style="color: #fff;" id="snapshot-hash"></span>
+              </div>
+              <pre style="background: #080b12; padding: 10px; border-radius: 4px; font-size: 11px; color: #a0aec0; max-height: 180px; overflow-y: auto;" id="snapshot-payload-display"></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 8: DYNAMIC SECURITY RULE SYNTHESIZER -->
+      <section class="tab-pane" id="tab-synthesizer">
+        <div class="synthesizer-container">
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <span class="panel-title">Dynamic Zero-Trust Rule Synthesizer</span>
+                <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                  Automatically analyzes MCP tool schemas or threat samples and synthesizes tailored zero-trust defense rules for real-time hot-reloading.
+                </p>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 14px;">
+              <!-- Schema Analyzer Form -->
+              <div style="background: var(--bg-card); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+                <div class="section-subhead">SYNTHESIZE FROM TOOL SCHEMA</div>
+                <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px;">
+                  <label style="font-size: 12px; color: var(--text-muted);">Select Target Tool:</label>
+                  <select id="synth-tool-select" style="background: var(--bg-surface); color: var(--text-main); border: 1px solid var(--border-subtle); padding: 8px; border-radius: 4px; font-size: 13px;">
+                    <option value="read_file">read_file (virtual_filesystem)</option>
+                    <option value="write_file">write_file (virtual_filesystem)</option>
+                    <option value="fetch_url">fetch_url (virtual_http)</option>
+                    <option value="hash_sha256">hash_sha256 (virtual_crypto)</option>
+                  </select>
+                  <button class="btn-primary" id="synth-tool-btn" style="margin-top: 6px;">
+                    <span class="icon">⚡</span> Synthesize Tailored Rules
+                  </button>
+                </div>
+              </div>
+
+              <!-- Pattern Builder Form -->
+              <div style="background: var(--bg-card); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+                <div class="section-subhead">SYNTHESIZE FROM THREAT SIGNATURE</div>
+                <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+                  <input type="text" id="synth-sig-name" placeholder="Signature Name (e.g. Block API Key Leaks)" style="background: var(--bg-surface); border: 1px solid var(--border-subtle); padding: 6px 10px; color: #fff; font-size: 12px; border-radius: 4px;">
+                  <input type="text" id="synth-sig-regex" placeholder="Regex Pattern (e.g. ghp_[a-zA-Z0-9]{36})" style="background: var(--bg-surface); border: 1px solid var(--border-subtle); padding: 6px 10px; color: #fff; font-size: 12px; border-radius: 4px; font-family: var(--font-mono);">
+                  <div style="display: flex; gap: 10px;">
+                    <select id="synth-sig-severity" style="flex: 1; background: var(--bg-surface); color: #fff; border: 1px solid var(--border-subtle); padding: 6px; border-radius: 4px; font-size: 12px;">
+                      <option value="CRITICAL">CRITICAL</option>
+                      <option value="HIGH" selected>HIGH</option>
+                      <option value="MEDIUM">MEDIUM</option>
+                    </select>
+                    <button class="btn-secondary" id="synth-sig-btn">Synthesize & Hot-Reload</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Synthesized Rules List -->
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">Synthesized & Hot-Reloadable Defense Rules</span>
+              <span class="badge" id="synthesized-count-badge">0 Rules Available</span>
+            </div>
+            <div id="synthesized-rules-container" style="display: flex; flex-direction: column; gap: 12px; margin-top: 14px;">
+              <p class="empty-state">Select a tool above or input a custom threat signature to synthesize zero-trust defense rules.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 9: CLIENT CONFIG GENERATOR -->
+      <section class="tab-pane" id="tab-configs">
+        <div class="configs-container">
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <span class="panel-title">AI Client Drop-in Configurations</span>
+                <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                  1-click configuration templates to connect Claude Desktop, Cursor, Zed, and Windsurf through AegisMCP's zero-trust tool firewall.
+                </p>
+              </div>
+            </div>
+
+            <div class="client-tabs" style="margin-top: 14px;">
+              <button class="client-tab-btn active" data-client="claude">Claude Desktop</button>
+              <button class="client-tab-btn" data-client="cursor">Cursor IDE</button>
+              <button class="client-tab-btn" data-client="zed">Zed Editor</button>
+              <button class="client-tab-btn" data-client="windsurf">Windsurf</button>
+              <button class="client-tab-btn" data-client="http">HTTP Gateway</button>
+            </div>
+
+            <div style="font-size: 12px; color: var(--accent-cyan); margin-bottom: 8px;">
+              Target File: <code id="config-target-path" style="background: var(--bg-card); padding: 2px 6px; border-radius: 4px;">~/Library/Application Support/Claude/claude_desktop_config.json</code>
+            </div>
+
+            <div style="position: relative;">
+              <button class="config-copy-btn" id="copy-config-btn">📋 Copy Snippet</button>
+              <pre class="config-code-box" id="client-config-code"></pre>
+            </div>
+
+            <p style="font-size: 12px; color: var(--text-muted); margin-top: 10px;" id="config-instruction-text">
+              Paste this block into your client's configuration file and restart the application.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 10: PROXY & MCP SERVERS FLEET -->
+      <section class="tab-pane" id="tab-servers">
+        <div class="servers-container">
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">Shielded MCP Servers & Upstream Fleet</span>
+              <span class="badge" id="servers-fleet-count">4 Active Servers</span>
+            </div>
+
+            <!-- Connect External Server -->
+            <div style="background: var(--bg-card); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); margin-top: 14px;">
+              <div class="section-subhead">CONNECT EXTERNAL STDIO / HTTP MCP SERVER</div>
+              <div style="display: grid; grid-template-columns: 180px 1fr 120px; gap: 10px; margin-top: 10px;">
+                <input type="text" id="new-server-name" placeholder="Server ID (e.g. ext_github)" style="background: var(--bg-surface); border: 1px solid var(--border-subtle); padding: 6px 10px; color: #fff; font-size: 12px; border-radius: 4px;">
+                <input type="text" id="new-server-command" placeholder="Command (e.g. npx -y @modelcontextprotocol/server-filesystem /tmp)" style="background: var(--bg-surface); border: 1px solid var(--border-subtle); padding: 6px 10px; color: #fff; font-size: 12px; border-radius: 4px; font-family: var(--font-mono);">
+                <button class="btn-primary" id="connect-server-btn">Connect</button>
+              </div>
+            </div>
+
+            <!-- Server Cards List -->
+            <div id="fleet-servers-cards" style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 16px;"></div>
           </div>
         </div>
       </section>

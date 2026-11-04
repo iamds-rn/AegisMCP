@@ -18,15 +18,20 @@ const {
   VirtualCryptoServer,
   VirtualHttpSimulatorServer
 } = require('./servers/virtualHub');
+const { DynamicRuleSynthesizer } = require('./firewall/synthesizer');
+const { ExternalProcessServer } = require('./servers/externalProcessServer');
+const { ClientConfigGenerator } = require('./protocol/configGenerator');
 const { AegisProxyServer } = require('./protocol/proxy');
 
 module.exports = {
   // Protocol
   jsonrpc,
+  ClientConfigGenerator,
   // Firewall
   FirewallEngine,
   MODES,
   rules,
+  DynamicRuleSynthesizer,
   // Audit Ledger
   AuditBlock,
   AuditLedger,
@@ -41,6 +46,7 @@ module.exports = {
   VirtualMemoryServer,
   VirtualCryptoServer,
   VirtualHttpSimulatorServer,
+  ExternalProcessServer,
   // Proxy Gateway
   AegisProxyServer
 };

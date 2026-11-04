@@ -1,6 +1,6 @@
 {
   "name": "aegis-mcp",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Zero-Trust Security Firewall, Resilience Fuzzer, and Visual Observability Cockpit for the Model Context Protocol (MCP)",
   "main": "src/index.js",
   "bin": {
@@ -10,7 +10,9 @@
     "start": "node bin/aegis-mcp.js --serve",
     "test": "node tests/runner.js",
     "fuzz": "node bin/aegis-mcp.js --fuzz",
-    "verify": "node bin/aegis-mcp.js --verify-ledger"
+    "verify": "node bin/aegis-mcp.js --verify-ledger",
+    "forensics": "node bin/aegis-mcp.js --forensics",
+    "config": "node bin/aegis-mcp.js --generate-config all"
   },
   "keywords": [
     "mcp",

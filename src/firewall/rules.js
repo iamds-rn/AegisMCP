@@ -300,6 +300,137 @@ const BUILTIN_RULES = {
 
       return { violation: false };
     }
+  },
+
+  PROMPT_INJECTION: {
+    id: 'SEC-006',
+    name: 'Prompt Injection & Instruction Hijacking Guard',
+    severity: 'CRITICAL',
+    description: 'Detects prompt injection, system instruction overrides, jailbreak phrases, and delimiter breaks in tool arguments.',
+    check: (params) => {
+      const strings = extractAllStrings(params);
+      const injectionPatterns = [
+        { name: 'Instruction Override', regex: /(?:ignore|disregard|forget|skip)\s+(?:all\s+)?(?:previous|prior|above)\s+(?:instructions|prompts|directives|rules)\b/i },
+        { name: 'System Prompt Override', regex: /(?:system\s+prompt\s+override|override\s+system\s+instructions)\b/i },
+        { name: 'Jailbreak / Developer Mode', regex: /(?:you\s+are\s+now\s+in\s+(?:developer|dan|unrestricted|god)\s+mode|do\s+anything\s+now\s+mode|jailbroken\s+mode)\b/i },
+        { name: 'System Prompt Extraction', regex: /(?:reveal|print|display|dump)\s+(?:your\s+)?(?:system\s+prompt|hidden\s+instructions|internal\s+guidelines)\b/i },
+        { name: 'Special LLM Delimiter Breakout', regex: /(?:<\|im_start\|>|<\|im_end\|>|<\|system\|>|\[INST\]|\[\/INST\])/i }
+      ];
+
+      for (const str of strings) {
+        for (const { name, regex } of injectionPatterns) {
+          if (regex.test(str)) {
+            return {
+              violation: true,
+              ruleId: 'SEC-006',
+              signature: `Prompt Injection: ${name}`,
+              culprit: str.length > 80 ? str.slice(0, 77) + '...' : str
+            };
+          }
+        }
+      }
+      return { violation: false };
+    }
+  },
+
+  SQL_INJECTION: {
+    id: 'SEC-007',
+    name: 'SQL & Query Injection Guard',
+    severity: 'HIGH',
+    description: 'Detects SQL injection signatures, union extraction, boolean-based bypasses, and unauthorized DDL/DML queries.',
+    check: (params) => {
+      const strings = extractAllStrings(params);
+      const sqlPatterns = [
+        { name: 'Union-based Extraction', regex: /(\b(?:UNION\s+(?:ALL\s+)?SELECT)\b)/i },
+        { name: 'Boolean Bypass', regex: /(?:'\s*(?:OR|AND)\s*'?\w+'?\s*=\s*'?\w+'?|\b(?:OR|AND)\s+(?:1=1|true=true))/i },
+        { name: 'Destructive DDL/DML', regex: /(\b(?:DROP|TRUNCATE|ALTER)\s+(?:TABLE|DATABASE|VIEW)\b)/i },
+        { name: 'Stored Procedure Exec', regex: /(\b(?:EXEC|EXECUTE)\s*(?:\(|\s+)(?:@|xp_|sp_))/i },
+        { name: 'Time-Based Blind Injection', regex: /(\bSLEEP\s*\(\s*\d+\s*\)|\bBENCHMARK\s*\(\s*\d+)/i }
+      ];
+
+      for (const str of strings) {
+        for (const { name, regex } of sqlPatterns) {
+          if (regex.test(str)) {
+            return {
+              violation: true,
+              ruleId: 'SEC-007',
+              signature: `SQL Injection: ${name}`,
+              culprit: str.length > 80 ? str.slice(0, 77) + '...' : str
+            };
+          }
+        }
+      }
+      return { violation: false };
+    }
+  },
+
+  PROTOTYPE_POLLUTION: {
+    id: 'SEC-008',
+    name: 'Prototype Pollution & Object Injection Guard',
+    severity: 'HIGH',
+    description: 'Detects __proto__, constructor.prototype, and prototype override vectors in input objects.',
+    check: (params) => {
+      // 1. Check for altered prototype on input object
+      if (params && typeof params === 'object') {
+        const proto = Object.getPrototypeOf(params);
+        if (proto && proto !== Object.prototype && proto !== Array.prototype) {
+          return {
+            violation: true,
+            ruleId: 'SEC-008',
+            signature: 'Prototype Pollution: Altered Object Prototype',
+            culprit: '__proto__'
+          };
+        }
+      }
+
+      // 2. Traversal for string keys and values
+      const strings = extractAllStrings(params);
+      const pollutionRegex = /(\b__proto__\b|\bconstructor\.prototype\b|\bprototype\.constructor\b)/i;
+
+      for (const str of strings) {
+        if (pollutionRegex.test(str)) {
+          return {
+            violation: true,
+            ruleId: 'SEC-008',
+            signature: 'Prototype Pollution Key/Vector Detected',
+            culprit: str
+          };
+        }
+      }
+      return { violation: false };
+    }
+  },
+
+  ENV_SECRETS_EXFILTRATION: {
+    id: 'SEC-009',
+    name: 'Environment & Critical Secrets Exfiltration Guard',
+    severity: 'HIGH',
+    description: 'Detects access attempts targeting .env files, private keys, cloud tokens, kubeconfig, and credentials stores.',
+    check: (params) => {
+      const strings = extractAllStrings(params);
+      const sensitiveFiles = [
+        { name: 'Environment Configuration File', regex: /(\.env(\.(?:local|prod|production|dev|development|test|staging))?)\b/i },
+        { name: 'Cloud Credentials Store', regex: /(\.aws\/(?:credentials|config)|\.azure\/|\.gcloud\/)/i },
+        { name: 'SSH Private Key Identity', regex: /(\b(?:id_rsa|id_ed25519|id_ecdsa|id_dsa)(?:\.pub)?)\b/i },
+        { name: 'Kubernetes or Docker Config', regex: /(\.kube\/config|\.docker\/config\.json)\b/i },
+        { name: 'Cloud Service Account Key', regex: /(\b(?:service[-_]?account|gcp[-_]creds|firebase[-_]adminsdk).*\.json)\b/i },
+        { name: 'System Secrets File', regex: /(\/etc\/(?:environment|security\/limits\.conf|shadow))\b/i }
+      ];
+
+      for (const str of strings) {
+        for (const { name, regex } of sensitiveFiles) {
+          if (regex.test(str)) {
+            return {
+              violation: true,
+              ruleId: 'SEC-009',
+              signature: `Secrets Exfiltration: ${name}`,
+              culprit: str.length > 80 ? str.slice(0, 77) + '...' : str
+            };
+          }
+        }
+      }
+      return { violation: false };
+    }
   }
 };
 

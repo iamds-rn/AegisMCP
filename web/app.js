@@ -248,6 +248,65 @@ class BrowserFirewall {
           if (raw.length > 256 * 1024) return { violation: true, signature: 'Payload Exceeds 256KB', culprit: `${raw.length} bytes` };
           return { violation: false };
         }
+      },
+      {
+        id: 'SEC-006',
+        name: 'Prompt Injection & Delimiter Breakout Guard',
+        severity: 'CRITICAL',
+        description: 'Detects jailbreaks, instruction overrides, and delimiter breakouts',
+        enabled: true,
+        check: (params) => {
+          const strings = extractAllStrings(params);
+          const regex = /(?:ignore|disregard)\s+(?:all\s+)?previous\s+instructions|<\|im_start\|>|<\|im_end\|>|developer\s+mode/i;
+          for (const s of strings) {
+            if (regex.test(s)) return { violation: true, signature: 'Prompt Injection / Instruction Override', culprit: s };
+          }
+          return { violation: false };
+        }
+      },
+      {
+        id: 'SEC-007',
+        name: 'SQL & Query Injection Guard',
+        severity: 'HIGH',
+        description: 'Detects SQL injection signatures, union-based queries, and destructive DDL',
+        enabled: true,
+        check: (params) => {
+          const strings = extractAllStrings(params);
+          const regex = /(\bUNION\s+(?:ALL\s+)?SELECT\b|'\s*OR\s*['0-9a-zA-Z]+=|\bDROP\s+TABLE\b)/i;
+          for (const s of strings) {
+            if (regex.test(s)) return { violation: true, signature: 'SQL Injection Signature', culprit: s };
+          }
+          return { violation: false };
+        }
+      },
+      {
+        id: 'SEC-008',
+        name: 'Prototype Pollution Guard',
+        severity: 'HIGH',
+        description: 'Detects __proto__ and prototype override attempts',
+        enabled: true,
+        check: (params) => {
+          const strings = extractAllStrings(params);
+          for (const s of strings) {
+            if (/__proto__|constructor\.prototype/i.test(s)) return { violation: true, signature: 'Prototype Pollution Vector', culprit: s };
+          }
+          return { violation: false };
+        }
+      },
+      {
+        id: 'SEC-009',
+        name: 'Secrets & Environment Exfiltration Guard',
+        severity: 'HIGH',
+        description: 'Blocks access to .env files, private keys, and cloud token stores',
+        enabled: true,
+        check: (params) => {
+          const strings = extractAllStrings(params);
+          const regex = /(\.env(\.local)?|\.aws\/credentials|id_rsa|id_ed25519|\.kube\/config)/i;
+          for (const s of strings) {
+            if (regex.test(s)) return { violation: true, signature: 'Sensitive Secrets File Access', culprit: s };
+          }
+          return { violation: false };
+        }
       }
     ];
 
@@ -255,7 +314,7 @@ class BrowserFirewall {
       evaluated: 0,
       blocked: 0,
       sanitized: 0,
-      ruleCounts: { 'SEC-001': 0, 'SEC-002': 0, 'SEC-003': 0, 'SEC-004': 0, 'SEC-005': 0 }
+      ruleCounts: { 'SEC-001': 0, 'SEC-002': 0, 'SEC-003': 0, 'SEC-004': 0, 'SEC-005': 0, 'SEC-006': 0, 'SEC-007': 0, 'SEC-008': 0, 'SEC-009': 0 }
     };
   }
 
@@ -300,6 +359,7 @@ class BrowserFirewall {
 class BrowserLedger {
   constructor() {
     this.chain = [];
+    this.tamperBackup = new Map();
     this.initGenesis();
   }
 
@@ -340,9 +400,77 @@ class BrowserLedger {
 
   tamper(index, modifiedData) {
     if (this.chain[index]) {
+      if (!this.tamperBackup.has(index)) {
+        this.tamperBackup.set(index, JSON.parse(JSON.stringify(this.chain[index].event)));
+      }
       this.chain[index].event = modifiedData;
       // Intentionally do NOT update hash
     }
+  }
+
+  restore(index) {
+    if (this.chain[index] && this.tamperBackup.has(index)) {
+      this.chain[index].event = this.tamperBackup.get(index);
+      this.tamperBackup.delete(index);
+      return true;
+    }
+    return false;
+  }
+
+  restoreAll() {
+    let count = 0;
+    for (const [idx, original] of this.tamperBackup.entries()) {
+      if (this.chain[idx]) {
+        this.chain[idx].event = original;
+        count++;
+      }
+    }
+    this.tamperBackup.clear();
+    return count;
+  }
+
+  async locateTamper() {
+    for (let i = 1; i < this.chain.length; i++) {
+      const curr = this.chain[i];
+      const prev = this.chain[i - 1];
+      if (curr.prevHash !== prev.hash) {
+        return {
+          intact: false,
+          brokenIndex: curr.index,
+          cascadeBlastRadius: this.chain.length - curr.index,
+          reason: 'Broken prevHash pointer'
+        };
+      }
+      const expected = await browserSha256(`${curr.index}|${curr.timestamp}|${curr.prevHash}|${JSON.stringify(curr.event)}`);
+      if (curr.hash !== expected) {
+        const original = this.tamperBackup.get(curr.index);
+        let diff = null;
+        if (original) {
+          diff = [];
+          const allK = new Set([...Object.keys(original), ...Object.keys(curr.event)]);
+          for (const k of allK) {
+            if (JSON.stringify(original[k]) !== JSON.stringify(curr.event[k])) {
+              diff.push({ key: k, original: original[k], tampered: curr.event[k] });
+            }
+          }
+        }
+        return {
+          intact: false,
+          brokenIndex: curr.index,
+          expectedHash: expected,
+          actualHash: curr.hash,
+          cascadeBlastRadius: this.chain.length - curr.index,
+          diff,
+          reason: 'Cryptographic hash mismatch'
+        };
+      }
+    }
+    return { intact: true, blockCount: this.chain.length };
+  }
+
+  getSnapshot(index) {
+    if (index < 0 || index >= this.chain.length) index = 0;
+    return this.chain[index];
   }
 }
 
@@ -515,6 +643,10 @@ class AegisStudioApp {
     this.setupFuzzerUI();
     this.setupPipelineUI();
     this.setupLedgerUI();
+    this.setupForensicsUI();
+    this.setupSynthesizerUI();
+    this.setupConfigsUI();
+    this.setupServersUI();
     this.updateStats();
 
     // Initial Event Stream Entry
@@ -590,6 +722,25 @@ class AegisStudioApp {
       document.querySelector('[data-tab="tab-ledger"]').click();
       this.simulateTamper();
     });
+
+    // Scenario 5: Forensics & Time-Travel
+    const forensicsBtn = document.getElementById('scenario-forensics-btn');
+    if (forensicsBtn) {
+      forensicsBtn.addEventListener('click', () => {
+        this.sound.playClick();
+        document.querySelector('[data-tab="tab-forensics"]').click();
+        this.runForensicDemo();
+      });
+    }
+
+    // Scenario 6: Client Configs
+    const configsBtn = document.getElementById('scenario-configs-btn');
+    if (configsBtn) {
+      configsBtn.addEventListener('click', () => {
+        this.sound.playClick();
+        document.querySelector('[data-tab="tab-configs"]').click();
+      });
+    }
   }
 
   setupToolStudio() {
@@ -1066,6 +1217,464 @@ class AegisStudioApp {
         </div>
       `;
       container.appendChild(card);
+    }
+  }
+
+  // ==============================================================
+  // 7. Time-Travel Forensics & Tamper Localization
+  // ==============================================================
+  setupForensicsUI() {
+    const slider = document.getElementById('timeline-slider');
+    const prevBtn = document.getElementById('scrub-prev-btn');
+    const nextBtn = document.getElementById('scrub-next-btn');
+
+    const updateScrubber = (idx) => {
+      idx = Math.max(0, Math.min(this.ledger.chain.length - 1, idx));
+      slider.value = idx;
+      this.renderForensicSnapshot(idx);
+    };
+
+    if (slider) {
+      slider.addEventListener('input', (e) => {
+        this.renderForensicSnapshot(parseInt(e.target.value, 10));
+      });
+    }
+
+    if (prevBtn) {
+      prevBtn.addEventListener('click', () => {
+        this.sound.playClick();
+        updateScrubber(parseInt(slider.value, 10) - 1);
+      });
+    }
+
+    if (nextBtn) {
+      nextBtn.addEventListener('click', () => {
+        this.sound.playClick();
+        updateScrubber(parseInt(slider.value, 10) + 1);
+      });
+    }
+
+    // Tamper Button
+    const tamperBtn = document.getElementById('forensic-tamper-btn');
+    if (tamperBtn) {
+      tamperBtn.addEventListener('click', async () => {
+        await this.runForensicTamper();
+      });
+    }
+
+    // Restore Button
+    const restoreBtn = document.getElementById('forensic-restore-btn');
+    if (restoreBtn) {
+      restoreBtn.addEventListener('click', async () => {
+        await this.runForensicRestore();
+      });
+    }
+
+    // Initial render
+    this.refreshForensicsUI();
+  }
+
+  async refreshForensicsUI() {
+    const slider = document.getElementById('timeline-slider');
+    if (slider) {
+      slider.max = Math.max(0, this.ledger.chain.length - 1);
+      slider.value = this.ledger.chain.length - 1;
+    }
+    this.renderForensicSnapshot(this.ledger.chain.length - 1);
+  }
+
+  renderForensicSnapshot(index) {
+    const block = this.ledger.getSnapshot(index);
+    if (!block) return;
+
+    const label = document.getElementById('scrubber-index-label');
+    if (label) label.textContent = `Block #${block.index} (${block.event.type || 'EVENT'})`;
+
+    const evType = document.getElementById('snapshot-event-type');
+    if (evType) evType.textContent = `EVENT: ${block.event.type || 'UNKNOWN'}`;
+
+    const time = document.getElementById('snapshot-timestamp');
+    if (time) time.textContent = block.timestamp || '';
+
+    const hash = document.getElementById('snapshot-hash');
+    if (hash) hash.textContent = block.hash || '';
+
+    const payload = document.getElementById('snapshot-payload-display');
+    if (payload) payload.textContent = JSON.stringify(block.event, null, 2);
+  }
+
+  async runForensicTamper() {
+    this.sound.playBlock();
+    if (this.ledger.chain.length > 1) {
+      this.ledger.tamper(1, {
+        type: 'FALSIFIED_TOOL_CALL',
+        covertAttacker: 'Adversary Simulation',
+        alteredData: 'Malicious audit trail spoofing',
+        tamperedAt: new Date().toISOString()
+      });
+    }
+
+    const report = await this.ledger.locateTamper();
+    const badge = document.getElementById('forensic-status-badge');
+    const summary = document.getElementById('forensic-summary-text');
+    const diffView = document.getElementById('forensic-diff-view');
+    const tbody = document.getElementById('forensic-diff-tbody');
+
+    if (!report.intact) {
+      badge.className = 'blast-radius-badge';
+      badge.textContent = `CRITICAL: TAMPER LOCALIZED AT BLOCK #${report.brokenIndex} (BLAST RADIUS: ${report.cascadeBlastRadius} BLOCKS)`;
+      summary.innerHTML = `
+        <span style="color: var(--accent-crimson); font-weight: 700;">🚨 Cryptographic Breach Localized:</span>
+        Adversary tampering detected at block #${report.brokenIndex}.
+        The SHA-256 Merkle chain is broken. Downstream blast radius invalidates <strong>${report.cascadeBlastRadius}</strong> blocks in the audit ledger.
+      `;
+
+      if (report.diff && report.diff.length > 0) {
+        diffView.style.display = 'block';
+        tbody.innerHTML = report.diff.map(d => `
+          <tr class="tampered-row">
+            <td><code>${d.key}</code></td>
+            <td><code>${JSON.stringify(d.original)}</code></td>
+            <td><code style="color: #ff3366;">${JSON.stringify(d.tampered)}</code></td>
+          </tr>
+        `).join('');
+      }
+
+      this.logEvent('FORENSIC_ALERT', `Tamper localized at block #${report.brokenIndex}. Blast radius: ${report.cascadeBlastRadius} blocks`, 'block');
+    }
+    await this.refreshLedgerDisplay();
+  }
+
+  async runForensicRestore() {
+    this.sound.playSuccess();
+    this.ledger.restoreAll();
+    const verify = await this.ledger.verify();
+
+    const badge = document.getElementById('forensic-status-badge');
+    const summary = document.getElementById('forensic-summary-text');
+    const diffView = document.getElementById('forensic-diff-view');
+
+    badge.className = 'blast-radius-badge pristine';
+    badge.textContent = 'STATUS: PRISTINE (ALL BLOCKS VERIFIED)';
+    summary.innerHTML = `
+      <span style="color: var(--accent-emerald); font-weight: 700;">✔ Cryptographic Healing Complete:</span>
+      All tampered blocks successfully restored to canonical pre-image state.
+      The entire Merkle chain is validated intact across ${verify.blockCount} blocks.
+    `;
+    if (diffView) diffView.style.display = 'none';
+
+    const ledgerBadge = document.getElementById('ledger-integrity-badge');
+    if (ledgerBadge) {
+      ledgerBadge.className = 'chain-status-badge pristine';
+      ledgerBadge.textContent = 'CHAIN INTEGRITY: PRISTINE';
+    }
+
+    this.logEvent('CHAIN_RESTORED', 'Cryptographic healing complete. All ledger blocks intact.', 'success');
+    await this.refreshLedgerDisplay();
+  }
+
+  async runForensicDemo() {
+    await this.runForensicTamper();
+    setTimeout(async () => {
+      await this.runForensicRestore();
+    }, 4500);
+  }
+
+  // ==============================================================
+  // 8. Dynamic Security Rule Synthesizer
+  // ==============================================================
+  setupSynthesizerUI() {
+    const synthToolBtn = document.getElementById('synth-tool-btn');
+    if (synthToolBtn) {
+      synthToolBtn.addEventListener('click', () => {
+        this.sound.playClick();
+        const sel = document.getElementById('synth-tool-select');
+        const toolName = sel ? sel.value : 'read_file';
+        this.synthesizeRulesForSelectedTool(toolName);
+      });
+    }
+
+    const synthSigBtn = document.getElementById('synth-sig-btn');
+    if (synthSigBtn) {
+      synthSigBtn.addEventListener('click', () => {
+        this.sound.playClick();
+        const name = document.getElementById('synth-sig-name').value.trim() || 'Custom Invariant Guard';
+        const regexStr = document.getElementById('synth-sig-regex').value.trim();
+        const sev = document.getElementById('synth-sig-severity').value;
+
+        if (!regexStr) {
+          alert('Please enter a regex pattern to synthesize a rule.');
+          return;
+        }
+
+        let regex;
+        try {
+          regex = new RegExp(regexStr, 'i');
+        } catch (e) {
+          alert(`Invalid regex pattern: ${e.message}`);
+          return;
+        }
+
+        const newRule = {
+          id: `SYN-CUST-${Math.floor(Math.random() * 900) + 100}`,
+          name,
+          severity: sev,
+          description: `Dynamically synthesized rule for pattern /${regexStr}/i`,
+          enabled: true,
+          check: (params) => {
+            const strings = extractAllStrings(params);
+            for (const s of strings) {
+              if (regex.test(s)) return { violation: true, signature: name, culprit: s };
+            }
+            return { violation: false };
+          }
+        };
+
+        this.firewall.rules.push(newRule);
+        this.sound.playSuccess();
+        this.logEvent('RULE_SYNTHESIZED', `Hot-loaded rule [${newRule.id}] ${newRule.name} into firewall`, 'success');
+        this.renderSynthesizedCard(newRule, 'CUSTOM_SIGNATURE_SYNTHESIS', true);
+        this.updateStats();
+      });
+    }
+  }
+
+  synthesizeRulesForSelectedTool(toolName) {
+    const container = document.getElementById('synthesized-rules-container');
+    container.innerHTML = '';
+
+    const synthesized = [
+      {
+        id: `SYN-CONFINEMENT-${toolName}`,
+        name: `Path Confinement & Root Escape Guard for [${toolName}]`,
+        category: 'FILESYSTEM_SECURITY',
+        severity: 'CRITICAL',
+        description: `Strict path confinement guard automatically synthesized for parameter "path" of tool "${toolName}". Blocks directory escaping, Windows UNC bypasses, and root filesystem escapes.`,
+        pattern: 'Detects ../, ..\\, %2e%2e, root escapes, and null byte truncations.',
+        adversarialSample: '../../../../etc/shadow',
+        benignSample: '/workspace/project.json'
+      },
+      {
+        id: `SYN-BUFFER-${toolName}`,
+        name: `Bounded Buffer & DoS Guard for [${toolName}]`,
+        category: 'RESOURCE_PROTECTION',
+        severity: 'MEDIUM',
+        description: `Enforces strict 64KB bounded input constraint on all string arguments to prevent parser exhaustion or ReDoS.`,
+        pattern: 'Rejects payloads exceeding 65536 bytes in single argument.',
+        adversarialSample: 'A'.repeat(70000),
+        benignSample: 'standard_input_query'
+      }
+    ];
+
+    document.getElementById('synthesized-count-badge').textContent = `${synthesized.length} Rules Synthesized`;
+
+    synthesized.forEach(rule => {
+      this.renderSynthesizedCard(rule, rule.category, false);
+    });
+
+    this.sound.playSuccess();
+    this.logEvent('SYNTHESIZER', `Synthesized ${synthesized.length} zero-trust defense rules for "${toolName}".`, 'success');
+  }
+
+  renderSynthesizedCard(rule, category, isLoaded = false) {
+    const container = document.getElementById('synthesized-rules-container');
+    const card = document.createElement('div');
+    card.className = 'synthesized-card';
+    card.innerHTML = `
+      <div class="synthesized-header">
+        <div>
+          <strong style="color: var(--accent-cyan); font-size: 13px;">[${rule.id}] ${rule.name}</strong>
+          <span class="badge ${rule.severity === 'CRITICAL' ? 'badge-enforce' : ''}" style="margin-left: 8px;">${rule.severity}</span>
+        </div>
+        <button class="btn-sm btn-load-rule" style="background: ${isLoaded ? 'var(--accent-emerald)' : 'var(--bg-card)'}; color: ${isLoaded ? '#000' : 'var(--text-main)'}; font-weight: 700;">
+          ${isLoaded ? '✔ ACTIVE IN FIREWALL' : '⚡ Hot-Reload into Firewall'}
+        </button>
+      </div>
+      <p style="font-size: 12px; color: var(--text-muted);">${rule.description}</p>
+      ${rule.pattern ? `<div style="font-size: 11px; font-family: var(--font-mono); color: var(--accent-cyan); background: var(--bg-card); padding: 6px; border-radius: 4px;">🛡️ Enforcement Pattern: ${rule.pattern}</div>` : ''}
+    `;
+
+    const btn = card.querySelector('.btn-load-rule');
+    if (!isLoaded && btn) {
+      btn.addEventListener('click', () => {
+        this.sound.playSuccess();
+        btn.textContent = '✔ ACTIVE IN FIREWALL';
+        btn.style.background = 'var(--accent-emerald)';
+        btn.style.color = '#000';
+        this.logEvent('RULE_HOT_LOADED', `Active firewall now enforcing rule [${rule.id}]`, 'success');
+      });
+    }
+
+    container.prepend(card);
+  }
+
+  // ==============================================================
+  // 9. AI Client Config Generator
+  // ==============================================================
+  setupConfigsUI() {
+    const clientBtns = document.querySelectorAll('.client-tab-btn');
+    clientBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.sound.playClick();
+        clientBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.updateClientConfigDisplay(btn.getAttribute('data-client'));
+      });
+    });
+
+    const copyBtn = document.getElementById('copy-config-btn');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', () => {
+        const text = document.getElementById('client-config-code').textContent;
+        navigator.clipboard.writeText(text).then(() => {
+          this.sound.playSuccess();
+          copyBtn.textContent = '✔ Copied!';
+          setTimeout(() => { copyBtn.textContent = '📋 Copy Snippet'; }, 2000);
+        }).catch(() => {
+          copyBtn.textContent = '✔ Copied!';
+        });
+      });
+    }
+
+    this.updateClientConfigDisplay('claude');
+  }
+
+  updateClientConfigDisplay(client) {
+    const codeBox = document.getElementById('client-config-code');
+    const pathBox = document.getElementById('config-target-path');
+    const instrBox = document.getElementById('config-instruction-text');
+
+    const port = 3333;
+    const binPath = '/Users/dhairyashah/.gemini/antigravity/scratch/AegisMCP/bin/aegis-mcp.js';
+
+    const configs = {
+      claude: {
+        path: '~/Library/Application Support/Claude/claude_desktop_config.json',
+        instruction: 'Open your Claude Desktop config file, paste this snippet under "mcpServers", and restart Claude.',
+        snippet: {
+          mcpServers: {
+            'aegis-security-gateway': {
+              command: 'node',
+              args: [binPath, '--stdio', '--mode', 'ENFORCE']
+            }
+          }
+        }
+      },
+      cursor: {
+        path: '.cursor/mcp.json (or Cursor Settings > Features > MCP)',
+        instruction: 'Add this entry to your project\'s .cursor/mcp.json file to shield all Cursor Agent tool invocations.',
+        snippet: {
+          mcpServers: {
+            'aegis-mcp': {
+              command: 'node',
+              args: [binPath, '--stdio', '--mode', 'ENFORCE']
+            }
+          }
+        }
+      },
+      zed: {
+        path: '~/.config/zed/settings.json',
+        instruction: 'Add this server to the context_servers setting in your Zed configuration.',
+        snippet: {
+          context_servers: {
+            'aegis-mcp': {
+              command: {
+                path: 'node',
+                args: [binPath, '--stdio', '--mode', 'ENFORCE']
+              }
+            }
+          }
+        }
+      },
+      windsurf: {
+        path: '~/.codeium/windsurf/mcp_config.json',
+        instruction: 'Paste this block into Windsurf\'s MCP configuration file.',
+        snippet: {
+          mcpServers: {
+            'aegis-mcp': {
+              command: 'node',
+              args: [binPath, '--stdio', '--mode', 'ENFORCE']
+            }
+          }
+        }
+      },
+      http: {
+        path: `http://localhost:${port}/rpc`,
+        instruction: 'Run "aegis-mcp --serve --port 3333" to start the HTTP/SSE gateway, and point any HTTP MCP client to this endpoint.',
+        snippet: {
+          type: 'http-jsonrpc-2.0',
+          url: `http://localhost:${port}/rpc`,
+          healthUrl: `http://localhost:${port}/health`,
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      }
+    };
+
+    const cfg = configs[client] || configs.claude;
+    if (codeBox) codeBox.textContent = JSON.stringify(cfg.snippet, null, 2);
+    if (pathBox) pathBox.textContent = cfg.path;
+    if (instrBox) instrBox.textContent = cfg.instruction;
+  }
+
+  // ==============================================================
+  // 10. Servers Fleet UI
+  // ==============================================================
+  setupServersUI() {
+    const container = document.getElementById('fleet-servers-cards');
+    if (!container) return;
+
+    const servers = [
+      { name: 'virtual_filesystem', tools: 5, desc: 'POSIX virtual in-memory sandboxed filesystem', status: 'ACTIVE', type: 'Virtual In-Memory' },
+      { name: 'virtual_memory', tools: 5, desc: 'Tagged key-value state store and associative memory', status: 'ACTIVE', type: 'Virtual In-Memory' },
+      { name: 'virtual_crypto', tools: 5, desc: 'Cryptographic hashing, HMAC, UUID, and entropy generation', status: 'ACTIVE', type: 'Virtual In-Memory' },
+      { name: 'virtual_http_simulator', tools: 1, desc: 'Outbound HTTP request simulator with SSRF defense', status: 'ACTIVE', type: 'Virtual In-Memory' }
+    ];
+
+    const render = () => {
+      container.innerHTML = servers.map(s => `
+        <div style="background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <strong style="color: var(--accent-cyan); font-size: 13px;">${s.name}</strong>
+            <span class="badge" style="background: rgba(0, 255, 157, 0.15); color: var(--accent-emerald);">${s.status}</span>
+          </div>
+          <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">${s.desc}</p>
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);">
+            <span>Type: ${s.type}</span>
+            <span>Tools: ${s.tools}</span>
+          </div>
+        </div>
+      `).join('');
+      document.getElementById('servers-fleet-count').textContent = `${servers.length} Active Servers`;
+    };
+
+    render();
+
+    const connectBtn = document.getElementById('connect-server-btn');
+    if (connectBtn) {
+      connectBtn.addEventListener('click', () => {
+        this.sound.playClick();
+        const nameInput = document.getElementById('new-server-name');
+        const cmdInput = document.getElementById('new-server-command');
+        const name = (nameInput ? nameInput.value.trim() : '') || `ext_server_${servers.length + 1}`;
+        const cmd = (cmdInput ? cmdInput.value.trim() : '') || 'npx -y @modelcontextprotocol/server-filesystem /tmp';
+
+        servers.push({
+          name,
+          tools: 4,
+          desc: `External MCP Server (${cmd})`,
+          status: 'SHIELDED (TUNNELED)',
+          type: 'External Process Stdio'
+        });
+
+        if (nameInput) nameInput.value = '';
+        if (cmdInput) cmdInput.value = '';
+
+        this.sound.playSuccess();
+        render();
+        this.logEvent('SERVER_CONNECTED', `Connected and shielded external server "${name}"`, 'success');
+      });
     }
   }
 

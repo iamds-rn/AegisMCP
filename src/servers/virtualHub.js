@@ -510,6 +510,8 @@ class VirtualHttpSimulatorServer {
   }
 }
 
+const { ExternalProcessServer } = require('./externalProcessServer');
+
 // -------------------------------------------------------------
 // Hub Manager
 // -------------------------------------------------------------
@@ -526,12 +528,42 @@ class VirtualHub {
     this.servers.set(server.name, server);
   }
 
+  async registerExternalServer(options) {
+    const ext = new ExternalProcessServer(options);
+    await ext.start();
+    this.registerServer(ext);
+    return ext;
+  }
+
+  removeServer(name) {
+    const server = this.servers.get(name);
+    if (!server) return false;
+    if (typeof server.stop === 'function') {
+      server.stop();
+    }
+    return this.servers.delete(name);
+  }
+
+  shutdownAll() {
+    for (const server of this.servers.values()) {
+      if (typeof server.stop === 'function') {
+        try {
+          server.stop();
+        } catch {
+          // Ignore error during shutdown
+        }
+      }
+    }
+  }
+
   listServers() {
     return Array.from(this.servers.values()).map(s => ({
       name: s.name,
       version: s.version,
       description: s.description,
-      toolCount: s.getTools().length
+      toolCount: (typeof s.getTools === 'function') ? s.getTools().length : 0,
+      isExternal: !!s.process || !!s.url,
+      status: s.status || 'READY'
     }));
   }
 
@@ -542,7 +574,8 @@ class VirtualHub {
   listAllTools() {
     const allTools = [];
     for (const [serverName, server] of this.servers.entries()) {
-      for (const tool of server.getTools()) {
+      const tools = (typeof server.getTools === 'function') ? server.getTools() : [];
+      for (const tool of tools) {
         allTools.push({
           ...tool,
           serverName
@@ -566,5 +599,6 @@ module.exports = {
   VirtualFilesystemServer,
   VirtualMemoryServer,
   VirtualCryptoServer,
-  VirtualHttpSimulatorServer
+  VirtualHttpSimulatorServer,
+  ExternalProcessServer
 };

@@ -68,15 +68,59 @@ class FirewallEngine {
     }
   }
 
+  toggleRule(ruleId) {
+    if (this.enabledRules.has(ruleId)) {
+      const rule = this.enabledRules.get(ruleId);
+      rule.enabled = !rule.enabled;
+      return rule.enabled;
+    } else if (this.customRules.has(ruleId)) {
+      const rule = this.customRules.get(ruleId);
+      rule.enabled = !rule.enabled;
+      return rule.enabled;
+    }
+    throw new Error(`Rule not found: ${ruleId}`);
+  }
+
   addCustomRule(rule) {
     if (!rule.id || !rule.name || typeof rule.check !== 'function') {
       throw new Error('Custom rule must have id, name, and check(params, toolName) function');
     }
     this.customRules.set(rule.id, {
       ...rule,
-      enabled: true,
+      enabled: rule.enabled !== undefined ? rule.enabled : true,
       custom: true
     });
+  }
+
+  removeCustomRule(ruleId) {
+    return this.customRules.delete(ruleId);
+  }
+
+  getAllRules() {
+    const list = [];
+    for (const rule of this.enabledRules.values()) {
+      list.push({
+        id: rule.id,
+        name: rule.name,
+        severity: rule.severity,
+        description: rule.description,
+        enabled: rule.enabled,
+        custom: false,
+        violations: this.stats.violationsByRule[rule.id] || 0
+      });
+    }
+    for (const rule of this.customRules.values()) {
+      list.push({
+        id: rule.id,
+        name: rule.name,
+        severity: rule.severity,
+        description: rule.description,
+        enabled: rule.enabled,
+        custom: true,
+        violations: this.stats.violationsByRule[rule.id] || 0
+      });
+    }
+    return list;
   }
 
   /**
@@ -100,6 +144,18 @@ class FirewallEngine {
     // Neutralize directory traversal in string values
     serialized = serialized.replace(/\.\.\//g, './');
     serialized = serialized.replace(/\.\.\\/g, '.\\');
+
+    // Neutralize prompt injection phrases
+    serialized = serialized.replace(/(?:ignore|disregard|forget|skip)\s+(?:all\s+)?(?:previous|prior|above)\s+(?:instructions|prompts|directives|rules)\b/gi, '[REDACTED_PROMPT_OVERRIDE]');
+    serialized = serialized.replace(/(?:<\|im_start\|>|<\|im_end\|>|<\|system\|>)/gi, '[REDACTED_DELIMITER]');
+
+    // Neutralize prototype pollution
+    serialized = serialized.replace(/"__proto__"/g, '"__safe_proto__"');
+    serialized = serialized.replace(/"constructor\.prototype"/g, '"constructor.safe_prototype"');
+
+    // Neutralize sensitive file exfiltration targets
+    serialized = serialized.replace(/\.env(\.(local|production|development|test))?/gi, '[REDACTED_ENV_TARGET]');
+    serialized = serialized.replace(/id_(rsa|ed25519|ecdsa)/gi, '[REDACTED_SSH_KEY]');
 
     try {
       return JSON.parse(serialized);

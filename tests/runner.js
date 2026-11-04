@@ -1,33 +1,43 @@
 /**
  * AegisMCP Master Test Runner
- * Executes all test suites and generates execution summary.
+ * Executes all 11 test suites and generates execution summary.
  */
 
 'use strict';
 
 const { runFirewallTests } = require('./test-firewall');
+const { runNewRulesTests } = require('./test-new-rules');
 const { runLedgerTests } = require('./test-ledger');
-const { runFuzzerTests } = require('./test-fuzzer');
-const { runPipelineTests } = require('./test-pipeline');
+const { runForensicsTests } = require('./test-forensics');
+const { runSynthesizerTests } = require('./test-synthesizer');
 const { runVirtualServerTests } = require('./test-virtual-servers');
+const { runExternalServerTests } = require('./test-external-server');
+const { runConfigGeneratorTests } = require('./test-config-generator');
+const { runPipelineTests } = require('./test-pipeline');
+const { runFuzzerTests } = require('./test-fuzzer');
 const { runE2ETests } = require('./test-e2e');
 
 async function main() {
   console.log(`
 🛡️  ==============================================================
-    AEGIS-MCP COMPREHENSIVE AUTOMATED TEST SUITE
+    AEGIS-MCP COMPREHENSIVE AUTOMATED TEST SUITE (v1.1.0)
 ==============================================================
 `);
 
   const startTime = Date.now();
   let passedSuites = 0;
   const suites = [
-    { name: 'Firewall Rules & Engine', fn: runFirewallTests },
+    { name: 'Firewall Rules & Engine (SEC-001 to SEC-005)', fn: runFirewallTests },
+    { name: 'Advanced Security Rules (SEC-006 to SEC-009)', fn: runNewRulesTests },
     { name: 'Cryptographic Audit Ledger', fn: runLedgerTests },
-    { name: 'Virtual MCP Servers', fn: runVirtualServerTests },
+    { name: 'Time-Travel Forensics & Tamper Localization', fn: runForensicsTests },
+    { name: 'Dynamic Security Rule Synthesizer', fn: runSynthesizerTests },
+    { name: 'Virtual MCP Servers Fleet', fn: runVirtualServerTests },
+    { name: 'External MCP Server stdio Proxy Tunneling', fn: runExternalServerTests },
+    { name: 'AI Client Configuration Generator', fn: runConfigGeneratorTests },
     { name: 'Visual DAG Pipeline Engine', fn: runPipelineTests },
-    { name: 'Protocol Fuzzer & Auditor', fn: runFuzzerTests },
-    { name: 'End-to-End JSON-RPC & Gateway', fn: runE2ETests }
+    { name: 'Protocol Fuzzer & Conformance Auditor', fn: runFuzzerTests },
+    { name: 'End-to-End JSON-RPC & HTTP Gateway Server', fn: runE2ETests }
   ];
 
   for (const suite of suites) {
@@ -52,6 +62,15 @@ async function main() {
       ✔ Secret & Credential Leakage Shield (SEC-003)
       ✔ SSRF & Cloud Metadata Protection (SEC-004)
       ✔ Payload Blast Radius / DoS Guard (SEC-005)
+      ✔ Prompt Injection & Instruction Hijacking Guard (SEC-006)
+      ✔ SQL & Query Injection Guard (SEC-007)
+      ✔ Prototype Pollution & Object Injection Guard (SEC-008)
+      ✔ Secrets & Environment Exfiltration Guard (SEC-009)
+      ✔ Dynamic Security Rule Synthesis & Hot-Reloading
+      ✔ Time-Travel Forensic Localization & Blast Radius Audit
+      ✔ 1-Click Cryptographic Healing & Chain Restoration
+      ✔ External MCP Server stdio Proxy Tunneling
+      ✔ Drop-in Client Configs (Claude Desktop, Cursor, Zed, Windsurf)
       ✔ SHA-256 Merkle-Chained Tamper Detection
       ✔ Automated Schema Mutation & Protocol Fuzzing
       ✔ Multi-Server DAG Pipeline Orchestration

@@ -60,6 +60,7 @@ class AuditLedger {
     this.maxMemoryBlocks = options.maxMemoryBlocks || 5000;
     this.chain = [];
     this.archivedBlocks = [];
+    this.tamperBackup = new Map();
     this.initGenesisBlock();
   }
 
@@ -205,9 +206,160 @@ class AuditLedger {
     if (!block) {
       throw new Error(`Block #${index} not found in chain`);
     }
+    if (!this.tamperBackup.has(index)) {
+      this.tamperBackup.set(index, JSON.parse(JSON.stringify(block.event)));
+    }
     block.event = modifiedEvent;
     // Note: block.hash is intentionally NOT updated, simulating undetected payload modification
     return block;
+  }
+
+  /**
+   * Restores a tampered block back to its canonical pristine payload.
+   */
+  restoreChain(index) {
+    if (!this.tamperBackup.has(index)) {
+      return false;
+    }
+    const fullChain = this.getFullChain();
+    const block = fullChain.find(b => b.index === index);
+    if (!block) return false;
+    block.event = this.tamperBackup.get(index);
+    this.tamperBackup.delete(index);
+    return true;
+  }
+
+  /**
+   * Restores all tampered blocks to pristine state and re-verifies.
+   */
+  restoreAll() {
+    let restoredCount = 0;
+    for (const [index, originalEvent] of this.tamperBackup.entries()) {
+      const fullChain = this.getFullChain();
+      const block = fullChain.find(b => b.index === index);
+      if (block) {
+        block.event = originalEvent;
+        restoredCount++;
+      }
+    }
+    this.tamperBackup.clear();
+    return {
+      restoredCount,
+      verification: this.verify()
+    };
+  }
+
+  /**
+   * Deep cryptographic forensics: pinpoints exact tamper locus, diffs altered data,
+   * and computes downstream invalidation cascade blast radius.
+   */
+  locateTamper() {
+    const fullChain = this.getFullChain();
+    const verification = this.verify();
+
+    if (verification.valid) {
+      return {
+        intact: true,
+        blockCount: fullChain.length,
+        headHash: this.getLatestBlock().hash,
+        genesisHash: fullChain[0].hash,
+        forensicSummary: `Audit Ledger is cryptographically PRISTINE. All ${fullChain.length} blocks verified against SHA-256 Merkle chain.`
+      };
+    }
+
+    const brokenIndex = verification.brokenIndex !== undefined ? verification.brokenIndex : -1;
+    const brokenBlock = fullChain.find(b => b.index === brokenIndex) || null;
+    const originalEvent = brokenIndex !== -1 ? this.tamperBackup.get(brokenIndex) : null;
+
+    // Calculate downstream cascade
+    const blastRadiusCount = fullChain.length - brokenIndex;
+    const invalidatedIndices = [];
+    for (let i = brokenIndex; i < fullChain.length; i++) {
+      invalidatedIndices.push(i);
+    }
+
+    // Compute field-level diff if pristine snapshot exists
+    let fieldDiff = null;
+    if (originalEvent && brokenBlock) {
+      fieldDiff = {
+        pristine: originalEvent,
+        tampered: brokenBlock.event,
+        changedKeys: []
+      };
+      const allKeys = new Set([...Object.keys(originalEvent), ...Object.keys(brokenBlock.event)]);
+      for (const k of allKeys) {
+        if (JSON.stringify(originalEvent[k]) !== JSON.stringify(brokenBlock.event[k])) {
+          fieldDiff.changedKeys.push({
+            key: k,
+            expected: originalEvent[k],
+            observed: brokenBlock.event[k]
+          });
+        }
+      }
+    }
+
+    return {
+      intact: false,
+      tamperedIndex: brokenIndex,
+      brokenBlock,
+      expectedHash: verification.expectedHash,
+      actualHash: verification.actualHash,
+      expectedPrevHash: verification.expectedPrevHash,
+      actualPrevHash: verification.actualPrevHash,
+      errorMessage: verification.error,
+      cascadeBlastRadius: blastRadiusCount,
+      invalidatedIndices,
+      fieldDiff,
+      forensicSummary: `CRITICAL INTEGRITY BREACH: Tampering localized at block #${brokenIndex}. Hash mismatch detected: recorded hash does not match computed Merkle hash from payload. Invalidation blast radius spans ${blastRadiusCount} downstream block(s) [indices: ${invalidatedIndices.slice(0, 5).join(', ')}${invalidatedIndices.length > 5 ? '...' : ''}].`
+    };
+  }
+
+  /**
+   * Time-Travel Inspector: Reconstructs state metrics as they existed at a historical block index.
+   */
+  getSnapshotAtBlock(targetIndex) {
+    const fullChain = this.getFullChain();
+    if (targetIndex < 0 || targetIndex >= fullChain.length) {
+      throw new Error(`Block index ${targetIndex} is out of bounds (0 to ${fullChain.length - 1}).`);
+    }
+
+    const targetBlock = fullChain[targetIndex];
+    const eventCounts = {};
+    const toolsCalled = new Set();
+    const firewallBlocks = [];
+
+    for (let i = 0; i <= targetIndex; i++) {
+      const b = fullChain[i];
+      const type = b.event.type || 'UNKNOWN';
+      eventCounts[type] = (eventCounts[type] || 0) + 1;
+
+      if (b.event.tool) {
+        toolsCalled.add(b.event.tool);
+      }
+      if (type === 'FIREWALL_BLOCK') {
+        firewallBlocks.push({
+          blockIndex: b.index,
+          timestamp: b.timestamp,
+          ruleId: b.event.ruleId,
+          signature: b.event.signature
+        });
+      }
+    }
+
+    return {
+      targetIndex,
+      timestamp: targetBlock.timestamp,
+      hash: targetBlock.hash,
+      prevHash: targetBlock.prevHash,
+      event: targetBlock.event,
+      historicalMetrics: {
+        totalBlocksAtPoint: targetIndex + 1,
+        eventCounts,
+        uniqueToolsCalled: Array.from(toolsCalled),
+        firewallBlockCount: firewallBlocks.length,
+        recentFirewallBlocks: firewallBlocks.slice(-5)
+      }
+    };
   }
 
   /**
