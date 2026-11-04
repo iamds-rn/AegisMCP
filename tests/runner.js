@@ -26,7 +26,7 @@ const { runLedgerPersistenceTests } = require('./test-ledger-persistence');
 async function main() {
   console.log(`
 🛡️  ==============================================================
-    AEGIS-MCP COMPREHENSIVE AUTOMATED TEST SUITE (v1.3.0)
+    AEGIS-MCP COMPREHENSIVE AUTOMATED TEST SUITE (v1.4.0)
 ==============================================================
 `);
 

@@ -93,12 +93,12 @@ class AegisProxyServer {
             firewall: true,
             auditLedger: true,
             fuzzer: true,
-            version: '1.3.0'
+            version: '1.4.0'
           }
         },
         serverInfo: {
           name: 'AegisMCP-Proxy',
-          version: '1.3.0'
+          version: '1.4.0'
         }
       });
     }
@@ -471,7 +471,7 @@ class AegisProxyServer {
         // Health endpoint
         if (url.pathname === '/health') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'healthy', version: '1.3.0', uptime: process.uptime() }));
+          res.end(JSON.stringify({ status: 'healthy', version: '1.4.0', uptime: process.uptime() }));
           return;
         }
 
