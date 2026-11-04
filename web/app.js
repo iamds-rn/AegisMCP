@@ -11,24 +11,92 @@
 // ==============================================================
 class SoundEngine {
   constructor() {
-    this.enabled = true;
+    let savedVolume = 0.6;
+    let savedEnabled = true;
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const v = localStorage.getItem('aegis_sound_volume');
+        if (v !== null) savedVolume = parseFloat(v);
+        const e = localStorage.getItem('aegis_sound_enabled');
+        if (e !== null) savedEnabled = e === 'true';
+      } catch (_) {}
+    }
+    this.volume = isNaN(savedVolume) ? 0.6 : Math.max(0, Math.min(1, savedVolume));
+    this.enabled = savedEnabled;
     this.ctx = null;
+    this.masterGain = null;
   }
 
   init() {
     if (!this.ctx && typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext)) {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       this.ctx = new AudioCtx();
+      this.masterGain = this.ctx.createGain();
+      const effGain = this.enabled ? this.volume : 0;
+      this.masterGain.gain.setValueAtTime(effGain, this.ctx.currentTime);
+      this.masterGain.connect(this.ctx.destination);
     }
     if (this.ctx && this.ctx.state === 'suspended') {
       this.ctx.resume().catch(() => {});
     }
   }
 
+  setVolume(vol) {
+    const parsed = parseFloat(vol);
+    this.volume = isNaN(parsed) ? 0.6 : Math.max(0, Math.min(1, parsed));
+    if (this.volume > 0) {
+      this.enabled = true;
+    } else {
+      this.enabled = false;
+    }
+    this.init();
+    if (this.masterGain && this.ctx) {
+      const effGain = this.enabled ? this.volume : 0;
+      this.masterGain.gain.setValueAtTime(effGain, this.ctx.currentTime);
+    }
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem('aegis_sound_volume', this.volume.toString());
+        localStorage.setItem('aegis_sound_enabled', this.enabled.toString());
+      } catch (_) {}
+    }
+    return this.volume;
+  }
+
+  toggleMute() {
+    this.enabled = !this.enabled;
+    if (this.enabled && this.volume === 0) {
+      this.volume = 0.6;
+    }
+    this.init();
+    if (this.masterGain && this.ctx) {
+      const effGain = this.enabled ? this.volume : 0;
+      this.masterGain.gain.setValueAtTime(effGain, this.ctx.currentTime);
+    }
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem('aegis_sound_enabled', this.enabled.toString());
+        localStorage.setItem('aegis_sound_volume', this.volume.toString());
+      } catch (_) {}
+    }
+    return this.enabled;
+  }
+
+  getEffectiveVolume() {
+    return this.enabled ? this.volume : 0;
+  }
+
+  getDestination() {
+    if (this.masterGain) return this.masterGain;
+    return this.ctx ? this.ctx.destination : null;
+  }
+
   playClick() {
-    if (!this.enabled) return;
+    if (!this.enabled || this.volume <= 0) return;
     this.init();
     if (!this.ctx) return;
+    const dest = this.getDestination();
+    if (!dest) return;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = 'sine';
@@ -37,15 +105,17 @@ class SoundEngine {
     gain.gain.setValueAtTime(0.04, this.ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.04);
     osc.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(dest);
     osc.start();
     osc.stop(this.ctx.currentTime + 0.04);
   }
 
   playSuccess() {
-    if (!this.enabled) return;
+    if (!this.enabled || this.volume <= 0) return;
     this.init();
     if (!this.ctx) return;
+    const dest = this.getDestination();
+    if (!dest) return;
     const now = this.ctx.currentTime;
     [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
       const osc = this.ctx.createOscillator();
@@ -55,16 +125,18 @@ class SoundEngine {
       gain.gain.setValueAtTime(0.06, now + i * 0.05);
       gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.05 + 0.18);
       osc.connect(gain);
-      gain.connect(this.ctx.destination);
+      gain.connect(dest);
       osc.start(now + i * 0.05);
       osc.stop(now + i * 0.05 + 0.18);
     });
   }
 
   playBlock() {
-    if (!this.enabled) return;
+    if (!this.enabled || this.volume <= 0) return;
     this.init();
     if (!this.ctx) return;
+    const dest = this.getDestination();
+    if (!dest) return;
     const now = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
@@ -74,15 +146,17 @@ class SoundEngine {
     gain.gain.setValueAtTime(0.09, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
     osc.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(dest);
     osc.start(now);
     osc.stop(now + 0.22);
   }
 
   playFuzzTick() {
-    if (!this.enabled) return;
+    if (!this.enabled || this.volume <= 0) return;
     this.init();
     if (!this.ctx) return;
+    const dest = this.getDestination();
+    if (!dest) return;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = 'sine';
@@ -90,7 +164,7 @@ class SoundEngine {
     gain.gain.setValueAtTime(0.015, this.ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.018);
     osc.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(dest);
     osc.start();
     osc.stop(this.ctx.currentTime + 0.018);
   }
@@ -711,6 +785,11 @@ class AegisStudioApp {
     this.hub = new BrowserVirtualHub();
     this.selectedTool = this.hub.tools[0];
     this.isApiGateway = typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http');
+    this.threatFilter = {
+      type: 'all',
+      rule: null
+    };
+    this.paletteActiveIndex = 0;
 
     // Rolling Telemetry Traffic History (30 buckets for live telemetry chart)
     this.telemetryHistory = Array.from({ length: 30 }, () => ({
@@ -731,6 +810,9 @@ class AegisStudioApp {
 
   async initUI() {
     this.setupTabs();
+    this.setupSoundControls();
+    this.setupCommandPalette();
+    this.setupThreatLogFilters();
     this.setupQuickScenarios();
     this.setupToolStudio();
     this.setupFirewallUI();
@@ -835,19 +917,9 @@ class AegisStudioApp {
       });
     });
 
-    // Global Command Shortcuts: Cmd+K / Ctrl+K to jump to tool search; Esc to clear
+    // Escape key handling
     if (typeof window !== 'undefined') {
       window.addEventListener('keydown', (e) => {
-        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-          e.preventDefault();
-          const toolTab = document.querySelector('.nav-tab[data-tab="tab-tools"]');
-          if (toolTab) toolTab.click();
-          const searchInput = document.getElementById('tool-search-input');
-          if (searchInput) {
-            searchInput.focus();
-            searchInput.select();
-          }
-        }
         if (e.key === 'Escape') {
           const searchInput = document.getElementById('tool-search-input');
           if (searchInput && document.activeElement === searchInput) {
@@ -861,33 +933,6 @@ class AegisStudioApp {
       });
     }
 
-    // Sound toggle with clean SVG icon replacement
-    const soundBtn = document.getElementById('sound-toggle-btn');
-    if (soundBtn) {
-      soundBtn.addEventListener('click', () => {
-        this.sound.enabled = !this.sound.enabled;
-        const iconEl = document.getElementById('sound-icon');
-        if (iconEl) {
-          if (this.sound.enabled) {
-            iconEl.innerHTML = `
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
-              </svg>
-            `;
-          } else {
-            iconEl.innerHTML = `
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-                <line x1="23" y1="9" x2="17" y2="15"/>
-                <line x1="17" y1="9" x2="23" y2="15"/>
-              </svg>
-            `;
-          }
-        }
-      });
-    }
-
     // Clear event stream
     const clearBtn = document.getElementById('clear-stream-btn');
     if (clearBtn) {
@@ -896,8 +941,714 @@ class AegisStudioApp {
         const container = document.getElementById('event-stream-container');
         if (container) container.innerHTML = '';
         this.logEvent('LOG_CLEARED', 'Event audit stream cleared by operator.', 'audit');
+        if (this.updateFilterCounts) this.updateFilterCounts();
       });
     }
+  }
+
+  switchTab(tabId) {
+    const tabBtn = document.querySelector(`.nav-tab[data-tab="${tabId}"]`);
+    if (tabBtn) {
+      tabBtn.click();
+    }
+  }
+
+  setupSoundControls() {
+    const soundBtn = document.getElementById('sound-toggle-btn');
+    const popover = document.getElementById('sound-popover');
+    const slider = document.getElementById('sound-volume-slider');
+    const volBadge = document.getElementById('sound-vol-badge');
+    const popoverVal = document.getElementById('sound-popover-val');
+    const muteIconBtn = document.getElementById('sound-mute-icon-btn');
+    const testBtn = document.getElementById('sound-test-btn');
+    const presetChips = document.querySelectorAll('.sound-preset-chip');
+
+    const updateUI = () => {
+      const volPct = Math.round(this.sound.volume * 100);
+      const isMuted = !this.sound.enabled || this.sound.volume === 0;
+
+      if (slider) slider.value = isMuted ? 0 : volPct;
+      if (volBadge) volBadge.textContent = isMuted ? 'MUTE' : `${volPct}%`;
+      if (popoverVal) popoverVal.textContent = isMuted ? 'Muted' : `${volPct}%`;
+
+      if (presetChips) {
+        presetChips.forEach(chip => {
+          const chipVol = parseInt(chip.getAttribute('data-volume'), 10);
+          chip.classList.toggle('active', (isMuted && chipVol === 0) || (!isMuted && chipVol === volPct));
+        });
+      }
+
+      const iconEl = document.getElementById('sound-icon');
+      if (iconEl) {
+        if (isMuted) {
+          iconEl.innerHTML = `
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+              <line x1="23" y1="9" x2="17" y2="15"/>
+              <line x1="17" y1="9" x2="23" y2="15"/>
+            </svg>
+          `;
+        } else if (volPct < 50) {
+          iconEl.innerHTML = `
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+            </svg>
+          `;
+        } else {
+          iconEl.innerHTML = `
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+            </svg>
+          `;
+        }
+      }
+    };
+
+    this.updateSoundUI = updateUI;
+    updateUI();
+
+    if (soundBtn) {
+      soundBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (popover) {
+          const isOpen = popover.style.display !== 'none';
+          popover.style.display = isOpen ? 'none' : 'flex';
+          if (!isOpen) this.sound.playClick();
+        }
+      });
+    }
+
+    if (slider) {
+      slider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        this.sound.setVolume(val / 100);
+        updateUI();
+      });
+    }
+
+    if (muteIconBtn) {
+      muteIconBtn.addEventListener('click', () => {
+        this.sound.toggleMute();
+        updateUI();
+        this.sound.playClick();
+      });
+    }
+
+    if (presetChips) {
+      presetChips.forEach(chip => {
+        chip.addEventListener('click', () => {
+          const chipVol = parseInt(chip.getAttribute('data-volume'), 10);
+          this.sound.setVolume(chipVol / 100);
+          updateUI();
+          this.sound.playClick();
+        });
+      });
+    }
+
+    if (testBtn) {
+      testBtn.addEventListener('click', () => {
+        this.sound.playSuccess();
+      });
+    }
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('click', (e) => {
+        if (popover && popover.style.display !== 'none') {
+          const wrapper = document.getElementById('sound-control-wrapper');
+          if (wrapper && !wrapper.contains(e.target)) {
+            popover.style.display = 'none';
+          }
+        }
+      });
+    }
+  }
+
+  setupCommandPalette() {
+    const backdrop = document.getElementById('command-palette-backdrop');
+    const input = document.getElementById('palette-search-input');
+    const resultsContainer = document.getElementById('palette-results');
+    const closeBtn = document.getElementById('palette-close-btn');
+    const triggerBtn = document.getElementById('palette-trigger-btn');
+    const summary = document.getElementById('palette-summary');
+
+    this.paletteActiveIndex = 0;
+    this.paletteCommands = [
+      // Navigation
+      {
+        id: 'nav-dashboard',
+        category: 'NAVIGATION',
+        title: 'Cockpit & Live Observability',
+        desc: 'Real-time telemetry chart, live event stream, and active threat matrix',
+        badge: 'Cockpit',
+        action: () => this.switchTab('tab-dashboard')
+      },
+      {
+        id: 'nav-tools',
+        category: 'NAVIGATION',
+        title: 'Tool Studio & Schema Inspector',
+        desc: 'Explore 16 virtual server tools, inspect JSON schemas, and test execution',
+        badge: 'Tools',
+        action: () => this.switchTab('tab-tools')
+      },
+      {
+        id: 'nav-firewall',
+        category: 'NAVIGATION',
+        title: 'Firewall Security Policies',
+        desc: 'Configure zero-trust policies SEC-001 through SEC-009, toggles and modes',
+        badge: 'Firewall',
+        action: () => this.switchTab('tab-firewall')
+      },
+      {
+        id: 'nav-synthesizer',
+        category: 'NAVIGATION',
+        title: 'Dynamic Rule Synthesizer',
+        desc: 'Synthesize custom zero-trust defense rules from schemas and attack payloads',
+        badge: 'Synthesizer',
+        action: () => this.switchTab('tab-synthesizer')
+      },
+      {
+        id: 'nav-fuzzer',
+        category: 'NAVIGATION',
+        title: 'Protocol Fuzzer & Boundary Tester',
+        desc: 'Run RFC 7693 protocol mutation campaigns and evaluate resilience grade',
+        badge: 'Fuzzer',
+        action: () => this.switchTab('tab-fuzzer')
+      },
+      {
+        id: 'nav-exploits',
+        category: 'NAVIGATION',
+        title: 'Weaponized Exploit Studio',
+        desc: 'Execute automated multi-vector attack suites and trigger self-healing defense',
+        badge: 'Exploits',
+        action: () => this.switchTab('tab-exploits')
+      },
+      {
+        id: 'nav-pipeline',
+        category: 'NAVIGATION',
+        title: 'Visual Multi-Server DAG Pipeline',
+        desc: 'Inspect topology DAG canvas and execute 4-step secure workflow',
+        badge: 'DAG',
+        action: () => this.switchTab('tab-pipeline')
+      },
+      {
+        id: 'nav-ledger',
+        category: 'NAVIGATION',
+        title: 'Cryptographic Audit Ledger',
+        desc: 'View SHA-256 Merkle-linked blocks and verify cryptographic chain integrity',
+        badge: 'Ledger',
+        action: () => this.switchTab('tab-ledger')
+      },
+      {
+        id: 'nav-forensics',
+        category: 'NAVIGATION',
+        title: 'Ledger Forensics & Blast Radius',
+        desc: 'Localize tamper attacks with time-travel scrubber and 1-click heal',
+        badge: 'Forensics',
+        action: () => this.switchTab('tab-forensics')
+      },
+      {
+        id: 'nav-configs',
+        category: 'NAVIGATION',
+        title: 'AI Client Configurations',
+        desc: 'Generate drop-in client configs for Claude Desktop, Cursor, Zed, and Windsurf',
+        badge: 'Configs',
+        action: () => this.switchTab('tab-configs')
+      },
+      {
+        id: 'nav-servers',
+        category: 'NAVIGATION',
+        title: 'Shielded MCP Server Fleet',
+        desc: 'Manage virtual server fleet and tunnel external stdio/HTTP processes',
+        badge: 'Fleet',
+        action: () => this.switchTab('tab-servers')
+      },
+
+      // Security Actions
+      {
+        id: 'act-exploit-audit',
+        category: 'SECURITY ACTIONS',
+        title: 'Run Automated Exploit Audit',
+        desc: 'Fire 19 weaponized attack payloads across 9 security threat vectors',
+        badge: '⚡ RUN',
+        action: () => {
+          this.switchTab('tab-exploits');
+          const btn = document.getElementById('run-exploit-audit-btn');
+          if (btn) btn.click();
+        }
+      },
+      {
+        id: 'act-fuzz-campaign',
+        category: 'SECURITY ACTIONS',
+        title: 'Launch Protocol Fuzzing Campaign',
+        desc: 'Mutate JSON-RPC schema invariants across virtual servers to score robustness',
+        badge: '⚡ FUZZ',
+        action: () => {
+          this.switchTab('tab-fuzzer');
+          const btn = document.getElementById('start-fuzz-btn');
+          if (btn) btn.click();
+        }
+      },
+      {
+        id: 'act-run-dag',
+        category: 'SECURITY ACTIONS',
+        title: 'Execute Visual DAG Pipeline',
+        desc: 'Run multi-server token extraction, HMAC signing, and mock deployment',
+        badge: '⚡ DAG',
+        action: () => {
+          this.switchTab('tab-pipeline');
+          const btn = document.getElementById('run-pipeline-btn');
+          if (btn) btn.click();
+        }
+      },
+      {
+        id: 'act-tamper-test',
+        category: 'SECURITY ACTIONS',
+        title: 'Simulate Cryptographic Tamper Attack',
+        desc: 'Inject rogue bit flip into block #1 to trigger instant chain invalidation',
+        badge: '⚡ TAMPER',
+        action: () => {
+          this.switchTab('tab-ledger');
+          const btn = document.getElementById('simulate-tamper-btn');
+          if (btn) btn.click();
+        }
+      },
+      {
+        id: 'act-heal-ledger',
+        category: 'SECURITY ACTIONS',
+        title: '1-Click Cryptographic Healing & Restore',
+        desc: 'Restore broken ledger blocks back to canonical state and recompute hashes',
+        badge: '⚡ RESTORE',
+        action: () => {
+          this.switchTab('tab-forensics');
+          const btn = document.getElementById('forensic-restore-btn');
+          if (btn) btn.click();
+        }
+      },
+      {
+        id: 'act-toggle-firewall-mode',
+        category: 'SECURITY ACTIONS',
+        title: 'Toggle Firewall Mode (ENFORCE ↔ AUDIT)',
+        desc: 'Switch between active zero-trust blocking and non-blocking audit telemetry',
+        badge: 'MODE',
+        action: () => {
+          const select = document.getElementById('firewall-mode-select');
+          if (select) {
+            select.value = select.value === 'ENFORCE' ? 'AUDIT' : 'ENFORCE';
+            select.dispatchEvent(new Event('change'));
+          }
+        }
+      },
+      {
+        id: 'act-clear-log',
+        category: 'SECURITY ACTIONS',
+        title: 'Clear Event Stream Audit Log',
+        desc: 'Purge current event buffer in cockpit feed and reset filter counts',
+        badge: 'CLEAR',
+        action: () => {
+          const btn = document.getElementById('clear-stream-btn');
+          if (btn) btn.click();
+        }
+      },
+
+      // Audio & Controls
+      {
+        id: 'act-audio-toggle',
+        category: 'AUDIO & SETTINGS',
+        title: 'Toggle Sound Effects Mute',
+        desc: 'Mute or unmute synthesized Web Audio feedback chimes and alert alarms',
+        badge: 'AUDIO',
+        action: () => {
+          this.sound.toggleMute();
+          if (this.updateSoundUI) this.updateSoundUI();
+        }
+      },
+      {
+        id: 'act-audio-25',
+        category: 'AUDIO & SETTINGS',
+        title: 'Set Sound Volume: 25% (Soft)',
+        desc: 'Low volume synthesizer feedback',
+        badge: '25%',
+        action: () => {
+          this.sound.setVolume(0.25);
+          if (this.updateSoundUI) this.updateSoundUI();
+          this.sound.playClick();
+        }
+      },
+      {
+        id: 'act-audio-60',
+        category: 'AUDIO & SETTINGS',
+        title: 'Set Sound Volume: 60% (Balanced)',
+        desc: 'Standard volume synthesizer feedback',
+        badge: '60%',
+        action: () => {
+          this.sound.setVolume(0.60);
+          if (this.updateSoundUI) this.updateSoundUI();
+          this.sound.playClick();
+        }
+      },
+      {
+        id: 'act-audio-100',
+        category: 'AUDIO & SETTINGS',
+        title: 'Set Sound Volume: 100% (Maximum)',
+        desc: 'Maximum volume synthesizer feedback',
+        badge: '100%',
+        action: () => {
+          this.sound.setVolume(1.0);
+          if (this.updateSoundUI) this.updateSoundUI();
+          this.sound.playClick();
+        }
+      },
+      {
+        id: 'act-audio-test',
+        category: 'AUDIO & SETTINGS',
+        title: 'Audition Sound Effect Chime',
+        desc: 'Play four-note arpeggiated success chime to test volume level',
+        badge: 'CHIME',
+        action: () => this.sound.playSuccess()
+      }
+    ];
+
+    const renderPalette = (filterText = '') => {
+      if (!resultsContainer) return;
+      resultsContainer.innerHTML = '';
+
+      const query = filterText.trim().toLowerCase();
+      const filtered = this.paletteCommands.filter(cmd => {
+        if (!query) return true;
+        return cmd.title.toLowerCase().includes(query) ||
+               cmd.desc.toLowerCase().includes(query) ||
+               cmd.category.toLowerCase().includes(query) ||
+               cmd.badge.toLowerCase().includes(query);
+      });
+
+      this.paletteFilteredCommands = filtered;
+
+      if (filtered.length === 0) {
+        resultsContainer.innerHTML = `<div class="palette-empty">No commands match "<strong>${filterText}</strong>"</div>`;
+        if (summary) summary.textContent = '0 commands found';
+        return;
+      }
+
+      if (this.paletteActiveIndex >= filtered.length) {
+        this.paletteActiveIndex = 0;
+      }
+
+      let currentCat = '';
+      let itemIdx = 0;
+
+      filtered.forEach((cmd) => {
+        if (cmd.category !== currentCat) {
+          currentCat = cmd.category;
+          const header = document.createElement('div');
+          header.className = 'palette-category-header';
+          header.textContent = currentCat;
+          resultsContainer.appendChild(header);
+        }
+
+        const idx = itemIdx++;
+        const itemEl = document.createElement('div');
+        itemEl.className = `palette-item ${idx === this.paletteActiveIndex ? 'active-item' : ''}`;
+        itemEl.setAttribute('data-index', idx);
+
+        itemEl.innerHTML = `
+          <div class="palette-item-left">
+            <div class="palette-item-icon">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
+            </div>
+            <div class="palette-item-details">
+              <span class="palette-item-title">${cmd.title}</span>
+              <span class="palette-item-desc">${cmd.desc}</span>
+            </div>
+          </div>
+          <span class="palette-item-badge">${cmd.badge}</span>
+        `;
+
+        itemEl.addEventListener('mouseenter', () => {
+          this.paletteActiveIndex = idx;
+          resultsContainer.querySelectorAll('.palette-item').forEach((el, i) => {
+            el.classList.toggle('active-item', i === idx);
+          });
+        });
+
+        itemEl.addEventListener('click', () => {
+          this.executePaletteCommand(cmd);
+        });
+
+        resultsContainer.appendChild(itemEl);
+      });
+
+      if (summary) {
+        summary.textContent = `${filtered.length} command${filtered.length === 1 ? '' : 's'}`;
+      }
+    };
+
+    const openPalette = () => {
+      if (!backdrop) return;
+      backdrop.style.display = 'flex';
+      this.paletteActiveIndex = 0;
+      if (input) {
+        input.value = '';
+        renderPalette('');
+        setTimeout(() => input.focus(), 30);
+      }
+      this.sound.playClick();
+    };
+
+    const closePalette = () => {
+      if (!backdrop) return;
+      backdrop.style.display = 'none';
+      if (input) input.blur();
+    };
+
+    this.openPalette = openPalette;
+    this.closePalette = closePalette;
+    this.executePaletteCommand = (cmd) => {
+      closePalette();
+      if (cmd && typeof cmd.action === 'function') {
+        cmd.action();
+      }
+    };
+
+    if (triggerBtn) {
+      triggerBtn.addEventListener('click', openPalette);
+    }
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', closePalette);
+    }
+
+    if (backdrop) {
+      backdrop.addEventListener('click', (e) => {
+        if (e.target === backdrop) {
+          closePalette();
+        }
+      });
+    }
+
+    if (input) {
+      input.addEventListener('input', (e) => {
+        this.paletteActiveIndex = 0;
+        renderPalette(e.target.value);
+      });
+
+      input.addEventListener('keydown', (e) => {
+        const filtered = this.paletteFilteredCommands || [];
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          if (filtered.length > 0) {
+            this.paletteActiveIndex = (this.paletteActiveIndex + 1) % filtered.length;
+            const items = resultsContainer.querySelectorAll('.palette-item');
+            items.forEach((el, i) => {
+              el.classList.toggle('active-item', i === this.paletteActiveIndex);
+              if (i === this.paletteActiveIndex) {
+                el.scrollIntoView({ block: 'nearest' });
+              }
+            });
+          }
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (filtered.length > 0) {
+            this.paletteActiveIndex = (this.paletteActiveIndex - 1 + filtered.length) % filtered.length;
+            const items = resultsContainer.querySelectorAll('.palette-item');
+            items.forEach((el, i) => {
+              el.classList.toggle('active-item', i === this.paletteActiveIndex);
+              if (i === this.paletteActiveIndex) {
+                el.scrollIntoView({ block: 'nearest' });
+              }
+            });
+          }
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          if (filtered.length > 0 && filtered[this.paletteActiveIndex]) {
+            this.executePaletteCommand(filtered[this.paletteActiveIndex]);
+          }
+        } else if (e.key === 'Escape') {
+          closePalette();
+        }
+      });
+    }
+
+    // Global keyboard listener for Cmd+K / Ctrl+K
+    if (typeof window !== 'undefined') {
+      window.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+          e.preventDefault();
+          if (backdrop && backdrop.style.display !== 'none') {
+            closePalette();
+          } else {
+            openPalette();
+          }
+        } else if (e.key === 'Escape') {
+          if (backdrop && backdrop.style.display !== 'none') {
+            closePalette();
+          }
+        }
+      });
+    }
+  }
+
+  setupThreatLogFilters() {
+    this.threatFilter = {
+      type: 'all',
+      rule: null
+    };
+
+    const pills = document.querySelectorAll('.filter-pill');
+    const chips = document.querySelectorAll('.filter-chip');
+    const resetBtn = document.getElementById('filter-pill-reset');
+
+    const updateFilterUI = () => {
+      pills.forEach(p => {
+        const pFilter = p.getAttribute('data-filter');
+        p.classList.toggle('active', !this.threatFilter.rule && this.threatFilter.type === pFilter);
+      });
+
+      chips.forEach(c => {
+        const cRule = c.getAttribute('data-rule');
+        c.classList.toggle('active', this.threatFilter.rule === cRule);
+      });
+
+      if (resetBtn) {
+        const hasCustom = this.threatFilter.type !== 'all' || this.threatFilter.rule !== null;
+        resetBtn.style.display = hasCustom ? 'inline-block' : 'none';
+      }
+
+      this.applyStreamFilter();
+    };
+
+    this.updateFilterUI = updateFilterUI;
+
+    pills.forEach(pill => {
+      pill.addEventListener('click', () => {
+        const f = pill.getAttribute('data-filter');
+        this.threatFilter.type = f;
+        this.threatFilter.rule = null;
+        this.sound.playClick();
+        updateFilterUI();
+      });
+    });
+
+    chips.forEach(chip => {
+      chip.addEventListener('click', () => {
+        const r = chip.getAttribute('data-rule');
+        this.threatFilter.rule = this.threatFilter.rule === r ? null : r;
+        this.sound.playClick();
+        updateFilterUI();
+      });
+    });
+
+    if (resetBtn) {
+      resetBtn.addEventListener('click', () => {
+        this.threatFilter.type = 'all';
+        this.threatFilter.rule = null;
+        this.sound.playClick();
+        updateFilterUI();
+      });
+    }
+
+    // Connect Active Threat Radar rows to filter log
+    document.querySelectorAll('.threat-row').forEach(row => {
+      row.title = 'Click to filter live event log by this rule';
+      row.addEventListener('click', () => {
+        const chip = row.querySelector('.rule-chip');
+        if (chip) {
+          const ruleCode = chip.textContent.trim();
+          this.threatFilter.rule = this.threatFilter.rule === ruleCode ? null : ruleCode;
+          this.sound.playClick();
+          updateFilterUI();
+        }
+      });
+    });
+  }
+
+  applyStreamFilter() {
+    const stream = document.getElementById('event-stream-container');
+    if (!stream) return;
+
+    const items = stream.querySelectorAll('.event-item');
+    let visibleCount = 0;
+
+    items.forEach(item => {
+      const kind = item.getAttribute('data-kind') || '';
+      const rule = item.getAttribute('data-rule') || '';
+      const text = item.getAttribute('data-search') || '';
+
+      let matchType = true;
+      if (this.threatFilter.type === 'block') {
+        matchType = kind === 'block' || text.includes('block') || text.includes('alert') || text.includes('tamper');
+      } else if (this.threatFilter.type === 'success') {
+        matchType = kind === 'success';
+      } else if (this.threatFilter.type === 'audit') {
+        matchType = kind === 'audit';
+      }
+
+      let matchRule = true;
+      if (this.threatFilter.rule) {
+        const targetRule = this.threatFilter.rule.toUpperCase();
+        matchRule = rule === targetRule || text.includes(targetRule.toLowerCase());
+      }
+
+      const matches = matchType && matchRule;
+      item.classList.toggle('filter-hidden', !matches);
+      if (matches) visibleCount++;
+    });
+
+    let emptyEl = document.getElementById('event-stream-empty-msg');
+    if (visibleCount === 0 && items.length > 0) {
+      if (!emptyEl) {
+        emptyEl = document.createElement('div');
+        emptyEl.id = 'event-stream-empty-msg';
+        emptyEl.className = 'event-stream-empty';
+        emptyEl.innerHTML = `No events match active filter: <strong>${this.threatFilter.rule || this.threatFilter.type}</strong>. <a href="#" style="color: var(--accent-primary); margin-left: 6px; text-decoration: underline;" id="reset-filter-link">Reset</a>`;
+        stream.appendChild(emptyEl);
+        emptyEl.querySelector('#reset-filter-link')?.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.threatFilter = { type: 'all', rule: null };
+          if (this.updateFilterUI) this.updateFilterUI();
+        });
+      } else {
+        emptyEl.style.display = 'block';
+        emptyEl.innerHTML = `No events match active filter: <strong>${this.threatFilter.rule || this.threatFilter.type}</strong>. <a href="#" style="color: var(--accent-primary); margin-left: 6px; text-decoration: underline;" id="reset-filter-link">Reset</a>`;
+      }
+    } else if (emptyEl) {
+      emptyEl.style.display = 'none';
+    }
+  }
+
+  updateFilterCounts() {
+    const stream = document.getElementById('event-stream-container');
+    if (!stream) return;
+    const items = stream.querySelectorAll('.event-item');
+    let total = items.length;
+    let blockCount = 0;
+    let successCount = 0;
+    let auditCount = 0;
+
+    items.forEach(item => {
+      const kind = item.getAttribute('data-kind');
+      const search = item.getAttribute('data-search') || '';
+      if (kind === 'block' || search.includes('block') || search.includes('alert') || search.includes('tamper')) {
+        blockCount++;
+      } else if (kind === 'success') {
+        successCount++;
+      } else if (kind === 'audit') {
+        auditCount++;
+      }
+    });
+
+    const cAll = document.getElementById('filter-count-all');
+    const cBlock = document.getElementById('filter-count-block');
+    const cSuccess = document.getElementById('filter-count-success');
+    const cAudit = document.getElementById('filter-count-audit');
+
+    if (cAll) cAll.textContent = total;
+    if (cBlock) cBlock.textContent = blockCount;
+    if (cSuccess) cSuccess.textContent = successCount;
+    if (cAudit) cAudit.textContent = auditCount;
   }
 
   setupQuickScenarios() {
@@ -2264,19 +3015,75 @@ Grade: A+
 
   logEvent(type, desc, kind = 'success', data = null) {
     const stream = document.getElementById('event-stream-container');
+
+    // Extract rule ID if present
+    let ruleId = null;
+    if (data && data.ruleId) {
+      ruleId = data.ruleId;
+    } else {
+      const match = (type + ' ' + desc).match(/(SEC-00[1-9])/i);
+      if (match) {
+        ruleId = match[1].toUpperCase();
+      } else if (type.includes('TAMPER') || type.includes('BREACH')) {
+        ruleId = 'TAMPER';
+      }
+    }
+
     if (stream) {
       const item = document.createElement('div');
       item.className = `event-item ${kind}`;
+      item.setAttribute('data-kind', kind);
+      if (ruleId) item.setAttribute('data-rule', ruleId);
+      item.setAttribute('data-search', `${type} ${desc} ${ruleId || ''}`.toLowerCase());
+
       const time = new Date().toLocaleTimeString();
       item.innerHTML = `
         <div class="event-top">
-          <span class="event-type-badge">${type}</span>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <span class="event-type-badge">${type}</span>
+            ${ruleId ? `<span class="event-rule-pill" data-rule="${ruleId}" title="Click to filter by ${ruleId}">${ruleId}</span>` : ''}
+          </div>
           <span class="event-time">${time}</span>
         </div>
         <div class="event-desc">${desc}</div>
         ${data ? `<div class="event-detail">${JSON.stringify(data)}</div>` : ''}
       `;
+
+      // Allow clicking rule pill inside card to filter
+      const pill = item.querySelector('.event-rule-pill');
+      if (pill) {
+        pill.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const r = pill.getAttribute('data-rule');
+          this.threatFilter.rule = this.threatFilter.rule === r ? null : r;
+          this.sound.playClick();
+          if (this.updateFilterUI) this.updateFilterUI();
+        });
+      }
+
+      // Hide if not matching active filter
+      if (this.threatFilter) {
+        let matchType = true;
+        if (this.threatFilter.type === 'block') {
+          matchType = kind === 'block' || type.includes('BLOCK') || type.includes('ALERT') || type.includes('TAMPER');
+        } else if (this.threatFilter.type === 'success') {
+          matchType = kind === 'success';
+        } else if (this.threatFilter.type === 'audit') {
+          matchType = kind === 'audit';
+        }
+
+        let matchRule = true;
+        if (this.threatFilter.rule) {
+          matchRule = ruleId === this.threatFilter.rule;
+        }
+
+        if (!matchType || !matchRule) {
+          item.classList.add('filter-hidden');
+        }
+      }
+
       stream.prepend(item);
+      if (this.updateFilterCounts) this.updateFilterCounts();
     }
 
     // Add telemetry chart data point

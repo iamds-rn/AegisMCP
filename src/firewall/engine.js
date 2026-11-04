@@ -14,6 +14,229 @@ const MODES = {
   SANITIZE: 'SANITIZE'      // Mask secrets, neutralize traversal sequences, allow through
 };
 
+/**
+ * Sliding-Window Token Bucket Rate Limiter
+ * Combines token bucket burst tolerance with sliding-window rolling request boundary enforcement.
+ */
+class TokenBucketRateLimiter {
+  /**
+   * @param {object} [options]
+   * @param {boolean} [options.enabled=true] - Whether rate limiting is actively enforced
+   * @param {number} [options.capacity=60] - Maximum burst capacity of the token bucket
+   * @param {number} [options.refillRate=60] - Number of tokens replenished per windowMs
+   * @param {number} [options.windowMs=60000] - Rolling sliding window in milliseconds (default: 60s)
+   * @param {number} [options.cost=1] - Default token cost per consumption
+   * @param {object} [options.toolLimits={}] - Custom per-tool limits override { [toolName]: { capacity, refillRate, windowMs } }
+   * @param {Function} [options.timeProvider=Date.now] - Clock function for deterministic testing
+   */
+  constructor(options = {}) {
+    this.enabled = options.enabled !== undefined ? !!options.enabled : true;
+    this.capacity = typeof options.capacity === 'number' && options.capacity > 0 ? options.capacity : 60;
+    this.refillRate = typeof options.refillRate === 'number' && options.refillRate > 0 ? options.refillRate : this.capacity;
+    this.windowMs = typeof options.windowMs === 'number' && options.windowMs > 0 ? options.windowMs : 60000;
+    this.defaultCost = typeof options.cost === 'number' && options.cost > 0 ? options.cost : 1;
+    this.toolLimits = options.toolLimits ? { ...options.toolLimits } : {};
+    this.timeProvider = typeof options.timeProvider === 'function' ? options.timeProvider : Date.now;
+
+    // Map of key -> bucket state
+    this.buckets = new Map();
+  }
+
+  /**
+   * Configures or updates rate limiter options dynamically
+   */
+  configure(options = {}) {
+    const oldCapacity = this.capacity;
+    if (options.enabled !== undefined) this.enabled = !!options.enabled;
+    if (typeof options.capacity === 'number' && options.capacity > 0) {
+      this.capacity = options.capacity;
+      const delta = this.capacity - oldCapacity;
+      for (const bucket of this.buckets.values()) {
+        bucket.capacity = this.capacity;
+        if (delta > 0) {
+          bucket.tokens = Math.min(bucket.capacity, bucket.tokens + delta);
+        }
+      }
+    }
+    if (typeof options.refillRate === 'number' && options.refillRate > 0) {
+      this.refillRate = options.refillRate;
+      for (const bucket of this.buckets.values()) {
+        bucket.refillRate = this.refillRate;
+      }
+    }
+    if (typeof options.windowMs === 'number' && options.windowMs > 0) {
+      this.windowMs = options.windowMs;
+      for (const bucket of this.buckets.values()) {
+        bucket.windowMs = this.windowMs;
+      }
+    }
+    if (typeof options.cost === 'number' && options.cost > 0) this.defaultCost = options.cost;
+    if (options.toolLimits) Object.assign(this.toolLimits, options.toolLimits);
+    if (typeof options.timeProvider === 'function') this.timeProvider = options.timeProvider;
+    if (options.reset) {
+      this.reset();
+    }
+  }
+
+  /**
+   * Retrieves or initializes the state for a given rate limiting key
+   */
+  _getOrCreateBucket(key, now) {
+    let bucket = this.buckets.get(key);
+    if (!bucket) {
+      const custom = this.toolLimits[key] || {};
+      const capacity = custom.capacity || this.capacity;
+      const refillRate = custom.refillRate || this.refillRate;
+      const windowMs = custom.windowMs || this.windowMs;
+
+      bucket = {
+        tokens: capacity,
+        lastRefill: now,
+        capacity,
+        refillRate,
+        windowMs,
+        history: []
+      };
+      this.buckets.set(key, bucket);
+    }
+    return bucket;
+  }
+
+  /**
+   * Refills tokens based on elapsed time and purges expired history records outside the sliding window
+   */
+  _updateBucket(bucket, now) {
+    const elapsed = Math.max(0, now - bucket.lastRefill);
+    if (elapsed > 0) {
+      const tokensToAdd = (elapsed * bucket.refillRate) / bucket.windowMs;
+      bucket.tokens = Math.min(bucket.capacity, bucket.tokens + tokensToAdd);
+      bucket.lastRefill = now;
+    }
+
+    const windowStart = now - bucket.windowMs;
+    while (bucket.history.length > 0 && bucket.history[0].timestamp <= windowStart) {
+      bucket.history.shift();
+    }
+  }
+
+  /**
+   * Evaluates and consumes tokens if available under sliding-window constraints
+   *
+   * @param {string} [key='global']
+   * @param {number} [cost]
+   * @param {number} [now]
+   * @returns {object} { allowed, remaining, limit, windowMs, retryAfterMs, resetMs }
+   */
+  consume(key = 'global', cost = null, now = null) {
+    if (!this.enabled) {
+      return {
+        allowed: true,
+        remaining: this.capacity,
+        limit: this.capacity,
+        windowMs: this.windowMs,
+        retryAfterMs: 0,
+        resetMs: 0
+      };
+    }
+
+    const currentTime = now !== null ? now : this.timeProvider();
+    const bucket = this._getOrCreateBucket(key, currentTime);
+    this._updateBucket(bucket, currentTime);
+
+    const effectiveCost = typeof cost === 'number' && cost > 0 ? cost : this.defaultCost;
+
+    if (bucket.tokens >= effectiveCost) {
+      bucket.tokens -= effectiveCost;
+      bucket.history.push({ timestamp: currentTime, cost: effectiveCost });
+
+      const oldestInWindow = bucket.history[0];
+      const resetMs = oldestInWindow ? Math.max(0, oldestInWindow.timestamp + bucket.windowMs - currentTime) : 0;
+
+      return {
+        allowed: true,
+        remaining: Math.max(0, Math.floor(bucket.tokens)),
+        limit: bucket.capacity,
+        windowMs: bucket.windowMs,
+        retryAfterMs: 0,
+        resetMs
+      };
+    }
+
+    // Rate limit exceeded: calculate deterministic retryAfterMs
+    const tokensNeeded = effectiveCost - bucket.tokens;
+    const retryAfterMs = Math.max(
+      1,
+      Math.ceil((tokensNeeded * bucket.windowMs) / bucket.refillRate)
+    );
+
+    const oldest = bucket.history[0];
+    const timeForWindowExpiry = oldest
+      ? Math.max(0, oldest.timestamp + bucket.windowMs - currentTime)
+      : retryAfterMs;
+
+    return {
+      allowed: false,
+      remaining: Math.max(0, Math.floor(bucket.tokens)),
+      limit: bucket.capacity,
+      windowMs: bucket.windowMs,
+      retryAfterMs,
+      resetMs: timeForWindowExpiry
+    };
+  }
+
+  /**
+   * Inspects rate limit state without consuming tokens
+   */
+  check(key = 'global', now = null) {
+    const currentTime = now !== null ? now : this.timeProvider();
+    const bucket = this._getOrCreateBucket(key, currentTime);
+    this._updateBucket(bucket, currentTime);
+    const windowConsumed = bucket.history.reduce((acc, h) => acc + h.cost, 0);
+
+    return {
+      tokens: bucket.tokens,
+      remaining: Math.max(0, Math.floor(bucket.tokens)),
+      limit: bucket.capacity,
+      windowMs: bucket.windowMs,
+      windowConsumed,
+      historyCount: bucket.history.length
+    };
+  }
+
+  /**
+   * Resets rate limit for a specific key, or all keys if omitted
+   */
+  reset(key = null) {
+    if (key) {
+      this.buckets.delete(key);
+    } else {
+      this.buckets.clear();
+    }
+  }
+
+  /**
+   * Removes inactive buckets older than maxAgeMs
+   */
+  prune(maxAgeMs = 300000) {
+    const now = this.timeProvider();
+    for (const [key, bucket] of this.buckets.entries()) {
+      if (now - bucket.lastRefill > maxAgeMs && bucket.history.length === 0) {
+        this.buckets.delete(key);
+      }
+    }
+  }
+
+  getStats() {
+    return {
+      enabled: this.enabled,
+      defaultCapacity: this.capacity,
+      defaultRefillRate: this.refillRate,
+      defaultWindowMs: this.windowMs,
+      activeBuckets: this.buckets.size
+    };
+  }
+}
+
 class FirewallEngine {
   constructor(options = {}) {
     this.mode = options.mode || MODES.ENFORCE;
@@ -29,12 +252,27 @@ class FirewallEngine {
       });
     }
 
+    // Sliding-Window Token Bucket Rate Limiter
+    const rateLimitConfig = options.rateLimit;
+    if (options.rateLimiter) {
+      this.rateLimiter = options.rateLimiter;
+    } else if (rateLimitConfig) {
+      const opts = typeof rateLimitConfig === 'object' ? rateLimitConfig : {};
+      this.rateLimiter = new TokenBucketRateLimiter({
+        enabled: opts.enabled !== false,
+        ...opts
+      });
+    } else {
+      this.rateLimiter = new TokenBucketRateLimiter({ enabled: false });
+    }
+
     // Telemetry & metrics
     this.stats = {
       totalEvaluated: 0,
       totalPassed: 0,
       totalBlocked: 0,
       totalSanitized: 0,
+      totalRateLimited: 0,
       violationsByRule: {},
       violationsByTool: {},
       startTime: Date.now()
@@ -50,6 +288,31 @@ class FirewallEngine {
       throw new Error(`Invalid firewall mode: ${mode}. Must be ENFORCE, AUDIT_ONLY, or SANITIZE.`);
     }
     this.mode = mode;
+  }
+
+  setRateLimit(config = {}) {
+    if (config === false) {
+      this.rateLimiter.enabled = false;
+      return;
+    }
+    if (config === true) {
+      this.rateLimiter.enabled = true;
+      return;
+    }
+    this.rateLimiter.configure(config);
+    if (config.enabled !== undefined) {
+      this.rateLimiter.enabled = !!config.enabled;
+    } else {
+      this.rateLimiter.enabled = true;
+    }
+  }
+
+  getRateLimitStatus(key = 'global') {
+    return this.rateLimiter ? this.rateLimiter.check(key) : null;
+  }
+
+  resetRateLimit(key = null) {
+    if (this.rateLimiter) this.rateLimiter.reset(key);
   }
 
   enableRule(ruleId) {
@@ -172,11 +435,81 @@ class FirewallEngine {
    * @param {string|number} requestId - JSON-RPC request ID
    * @returns {object} Evaluation result
    */
-  evaluate(toolName, params = {}, requestId = null) {
+  evaluate(toolName, params = {}, requestId = null, options = {}) {
     toolName = toolName || 'unknown_tool';
     const effectiveParams = (params !== null && typeof params === 'object') ? params : {};
     this.stats.totalEvaluated++;
 
+    // 1. Sliding-Window Token Bucket Rate Limiting Gate
+    if (this.rateLimiter && this.rateLimiter.enabled) {
+      const rateKey = (options && (options.rateLimitKey || options.clientId || options.key)) || toolName;
+      const cost = (options && options.cost) || 1;
+      const now = options && options.now;
+      const rateResult = this.rateLimiter.consume(rateKey, cost, now);
+
+      if (!rateResult.allowed) {
+        this.stats.totalRateLimited = (this.stats.totalRateLimited || 0) + 1;
+        this.stats.violationsByTool[toolName] = (this.stats.violationsByTool[toolName] || 0) + 1;
+
+        const alert = {
+          timestamp: new Date().toISOString(),
+          ruleId: 'RATE-LIMIT',
+          ruleName: 'Rate Limit Guard',
+          severity: 'HIGH',
+          toolName,
+          signature: `Sliding-window rate limit exceeded for "${rateKey}". Limit: ${rateResult.limit} per ${rateResult.windowMs}ms. Remaining: 0. Retry after ${rateResult.retryAfterMs}ms.`,
+          culprit: `${toolName} invocation frequency`,
+          mode: this.mode,
+          retryAfterMs: rateResult.retryAfterMs
+        };
+
+        this.recentAlerts.unshift(alert);
+        if (this.recentAlerts.length > this.maxAlerts) {
+          this.recentAlerts.pop();
+        }
+
+        if (this.mode === MODES.ENFORCE || this.mode === MODES.SANITIZE) {
+          this.stats.totalBlocked++;
+          return {
+            allowed: false,
+            blocked: true,
+            rateLimited: true,
+            mode: this.mode,
+            violation: alert,
+            retryAfterMs: rateResult.retryAfterMs,
+            jsonrpcError: createError(
+              requestId,
+              ERROR_CODES.AEGIS_RATE_LIMIT_EXCEEDED,
+              `AegisMCP Security Firewall Rate Limit: Tool call volume exceeded threshold for "${rateKey}". Try again in ${rateResult.retryAfterMs}ms.`,
+              {
+                ruleId: 'RATE-LIMIT',
+                toolName,
+                rateLimitKey: rateKey,
+                limit: rateResult.limit,
+                remaining: rateResult.remaining,
+                windowMs: rateResult.windowMs,
+                retryAfterMs: rateResult.retryAfterMs,
+                recommendation: 'Reduce tool invocation frequency or increase token bucket capacity.'
+              }
+            )
+          };
+        } else {
+          // AUDIT_ONLY
+          this.stats.totalPassed++;
+          return {
+            allowed: true,
+            blocked: false,
+            audited: true,
+            rateLimited: true,
+            mode: this.mode,
+            violation: alert,
+            retryAfterMs: rateResult.retryAfterMs
+          };
+        }
+      }
+    }
+
+    // 2. Rule evaluation (built-in and custom rules)
     const allRules = [
       ...Array.from(this.enabledRules.values()),
       ...Array.from(this.customRules.values())
@@ -279,7 +612,8 @@ class FirewallEngine {
       ...this.stats,
       uptimeSeconds: Math.floor((Date.now() - this.stats.startTime) / 1000),
       rulesCount: this.enabledRules.size + this.customRules.size,
-      activeMode: this.mode
+      activeMode: this.mode,
+      rateLimiting: this.rateLimiter ? this.rateLimiter.getStats() : null
     };
   }
 
@@ -292,13 +626,16 @@ class FirewallEngine {
     this.stats.totalPassed = 0;
     this.stats.totalBlocked = 0;
     this.stats.totalSanitized = 0;
+    this.stats.totalRateLimited = 0;
     this.stats.violationsByRule = {};
     this.stats.violationsByTool = {};
     this.recentAlerts = [];
+    if (this.rateLimiter) this.rateLimiter.reset();
   }
 }
 
 module.exports = {
   MODES,
-  FirewallEngine
+  FirewallEngine,
+  TokenBucketRateLimiter
 };

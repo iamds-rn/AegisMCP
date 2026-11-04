@@ -11,6 +11,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { AegisProxyServer } = require('../src/protocol/proxy');
 const {
+  SoundEngine,
   browserSha256,
   calculateShannonEntropy,
   extractAllStrings,
@@ -238,7 +239,87 @@ async function runWebStudioTests() {
   const randomKeyEntropy = calculateShannonEntropy('3bF9!kL#2pQz$w8m');
   assert(randomKeyEntropy > 3.5, 'Randomized key must have high Shannon entropy');
 
-  console.log('✅ Web Studio UI/UX & Client Architecture: All 7 test groups passed!');
+  // 8. SoundEngine Volume & Mute Controls Invariants
+  const sound = new SoundEngine();
+  assert.strictEqual(typeof sound.setVolume, 'function', 'SoundEngine must have setVolume');
+  assert.strictEqual(typeof sound.toggleMute, 'function', 'SoundEngine must have toggleMute');
+  assert.strictEqual(typeof sound.getEffectiveVolume, 'function', 'SoundEngine must have getEffectiveVolume');
+
+  // Test default state
+  assert.strictEqual(sound.enabled, true);
+  assert(sound.volume >= 0 && sound.volume <= 1);
+
+  // Test setVolume standard range
+  sound.setVolume(0.85);
+  assert.strictEqual(sound.volume, 0.85);
+  assert.strictEqual(sound.enabled, true);
+  assert.strictEqual(sound.getEffectiveVolume(), 0.85);
+
+  // Test boundary clamping
+  sound.setVolume(-0.5);
+  assert.strictEqual(sound.volume, 0);
+  assert.strictEqual(sound.enabled, false);
+  assert.strictEqual(sound.getEffectiveVolume(), 0);
+
+  sound.setVolume(1.75);
+  assert.strictEqual(sound.volume, 1.0);
+  assert.strictEqual(sound.enabled, true);
+  assert.strictEqual(sound.getEffectiveVolume(), 1.0);
+
+  // Test toggleMute
+  const muteResult = sound.toggleMute();
+  assert.strictEqual(muteResult, false);
+  assert.strictEqual(sound.enabled, false);
+  assert.strictEqual(sound.getEffectiveVolume(), 0);
+
+  const unmuteResult = sound.toggleMute();
+  assert.strictEqual(unmuteResult, true);
+  assert.strictEqual(sound.enabled, true);
+  assert.strictEqual(sound.getEffectiveVolume(), 1.0);
+
+  // Audio methods execute gracefully without errors even in headless/Node
+  sound.playClick();
+  sound.playSuccess();
+  sound.playBlock();
+  sound.playFuzzTick();
+
+  // 9. Command Palette, Threat Filter & Sound Controls DOM & Token Invariants
+  // HTML checks for Command Palette
+  assert(htmlContent.includes('id="palette-trigger-btn"'), 'Must contain palette trigger button');
+  assert(htmlContent.includes('id="command-palette-backdrop"'), 'Must contain command palette modal backdrop');
+  assert(htmlContent.includes('id="palette-search-input"'), 'Must contain palette search input');
+  assert(htmlContent.includes('id="palette-results"'), 'Must contain palette results container');
+
+  // HTML checks for Interactive Threat Log Filter Tags
+  assert(htmlContent.includes('id="threat-filter-toolbar"'), 'Must contain threat filter toolbar');
+  assert(htmlContent.includes('data-filter="all"'), 'Must contain All events filter pill');
+  assert(htmlContent.includes('data-filter="block"'), 'Must contain Blocked threats filter pill');
+  assert(htmlContent.includes('data-filter="success"'), 'Must contain Clean/allowed filter pill');
+  assert(htmlContent.includes('data-filter="audit"'), 'Must contain Audit/system filter pill');
+  for (let i = 1; i <= 9; i++) {
+    const code = `SEC-00${i}`;
+    assert(htmlContent.includes(`data-rule="${code}"`), `Must contain filter chip for rule: ${code}`);
+  }
+  assert(htmlContent.includes('data-rule="TAMPER"'), 'Must contain filter chip for TAMPER rule');
+
+  // HTML checks for Sound Controls
+  assert(htmlContent.includes('id="sound-control-wrapper"'), 'Must contain sound control wrapper');
+  assert(htmlContent.includes('id="sound-popover"'), 'Must contain sound volume popover');
+  assert(htmlContent.includes('id="sound-volume-slider"'), 'Must contain sound volume range slider');
+  assert(htmlContent.includes('id="sound-vol-badge"'), 'Must contain sound volume badge');
+  assert(htmlContent.includes('id="sound-test-btn"'), 'Must contain audition chime test button');
+
+  // CSS token & styling checks
+  assert(cssContent.includes('.palette-backdrop'), 'CSS must define .palette-backdrop');
+  assert(cssContent.includes('.palette-modal'), 'CSS must define .palette-modal');
+  assert(cssContent.includes('.threat-filter-toolbar'), 'CSS must define .threat-filter-toolbar');
+  assert(cssContent.includes('.filter-pill'), 'CSS must define .filter-pill');
+  assert(cssContent.includes('.filter-chip'), 'CSS must define .filter-chip');
+  assert(cssContent.includes('.event-rule-pill'), 'CSS must define .event-rule-pill');
+  assert(cssContent.includes('.sound-popover'), 'CSS must define .sound-popover');
+  assert(cssContent.includes('.sound-slider'), 'CSS must define .sound-slider');
+
+  console.log('✅ Web Studio UI/UX & Client Architecture: All 9 test groups passed!');
 }
 
 module.exports = { runWebStudioTests };

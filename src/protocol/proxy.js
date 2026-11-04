@@ -28,7 +28,15 @@ class AegisProxyServer {
     this.maxBodySize = typeof options.maxBodySize === 'number' && options.maxBodySize > 0
       ? options.maxBodySize
       : DEFAULT_MAX_BODY_SIZE;
-    this.firewall = options.firewall || new FirewallEngine({ mode: MODES.ENFORCE });
+    this.toolTimeoutMs = typeof options.toolTimeoutMs === 'number' && options.toolTimeoutMs > 0
+      ? options.toolTimeoutMs
+      : (typeof options.executionTimeoutMs === 'number' && options.executionTimeoutMs > 0
+        ? options.executionTimeoutMs
+        : (typeof options.timeoutMs === 'number' && options.timeoutMs > 0 ? options.timeoutMs : 30000));
+    this.firewall = options.firewall || new FirewallEngine({
+      mode: options.firewallMode || MODES.ENFORCE,
+      rateLimit: options.rateLimit
+    });
     this.ledger = options.ledger || new AuditLedger();
     this.hub = options.hub || new VirtualHub();
     this.fuzzer = new ProtocolFuzzer();
@@ -39,6 +47,18 @@ class AegisProxyServer {
     this.upstreamServer = null;
     this.httpServer = null;
     this.webDir = path.resolve(__dirname, '../../web');
+  }
+
+  setToolTimeout(timeoutMs) {
+    if (typeof timeoutMs === 'number' && timeoutMs > 0) {
+      this.toolTimeoutMs = timeoutMs;
+    }
+  }
+
+  setRateLimit(config) {
+    if (this.firewall) {
+      this.firewall.setRateLimit(config);
+    }
   }
 
   /**
@@ -73,12 +93,12 @@ class AegisProxyServer {
             firewall: true,
             auditLedger: true,
             fuzzer: true,
-            version: '1.2.0'
+            version: '1.3.0'
           }
         },
         serverInfo: {
           name: 'AegisMCP-Proxy',
-          version: '1.2.0'
+          version: '1.3.0'
         }
       });
     }
@@ -147,27 +167,59 @@ class AegisProxyServer {
       });
 
       // Step B: Zero-Trust Firewall Inspection
-      const evalResult = this.firewall.evaluate(toolName, toolArguments, id);
+      const rateLimitKey = (params && (params.clientId || params._clientId || params._key)) ||
+                           (toolArguments && (toolArguments._clientId || toolArguments._key)) ||
+                           toolName;
+      const rateCost = (params && params._cost) || (toolArguments && toolArguments._cost) || 1;
+      const evalResult = this.firewall.evaluate(toolName, toolArguments, id, {
+        rateLimitKey,
+        cost: rateCost
+      });
 
       if (evalResult.blocked) {
         // Intercepted and quarantined
-        this.ledger.append('FIREWALL_BLOCK', {
+        this.ledger.append(evalResult.rateLimited ? 'RATE_LIMIT_EXCEEDED' : 'FIREWALL_BLOCK', {
           id,
           server: serverName,
           tool: toolName,
           ruleId: evalResult.violation.ruleId,
           signature: evalResult.violation.signature,
-          culprit: evalResult.violation.culprit
+          culprit: evalResult.violation.culprit,
+          retryAfterMs: evalResult.retryAfterMs
         });
         return evalResult.jsonrpcError;
       }
 
       const effectiveArgs = evalResult.sanitized ? evalResult.sanitizedParams : toolArguments;
 
-      // Step C: Execution
+      // Step C: Execution with Deterministic Timeout
       const startTime = Date.now();
+      const executionTimeoutMs = Math.max(1,
+        (toolArguments && (toolArguments._timeoutMs || toolArguments.timeoutMs)) ||
+        (params && (params._timeoutMs || params.timeoutMs)) ||
+        this.toolTimeoutMs ||
+        30000
+      );
+
+      let timer = null;
+      let didTimeout = false;
+      const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          didTimeout = true;
+          const timeoutErr = new Error(`Tool "${toolName}" execution timed out after ${executionTimeoutMs}ms`);
+          timeoutErr.code = 'AEGIS_TIMEOUT';
+          timeoutErr.timeoutMs = executionTimeoutMs;
+          reject(timeoutErr);
+        }, executionTimeoutMs);
+        if (typeof timer.unref === 'function') timer.unref();
+      });
+
       try {
-        const result = await this.hub.executeTool(serverName, toolName, effectiveArgs);
+        const result = await Promise.race([
+          this.hub.executeTool(serverName, toolName, effectiveArgs),
+          timeoutPromise
+        ]);
+        if (timer) clearTimeout(timer);
         const durationMs = Date.now() - startTime;
 
         this.ledger.append('TOOL_CALL_SUCCESS', {
@@ -180,7 +232,42 @@ class AegisProxyServer {
 
         return createResponse(id, result);
       } catch (err) {
+        if (timer) clearTimeout(timer);
         const durationMs = Date.now() - startTime;
+
+        const isTimeout = didTimeout ||
+                          err.code === 'AEGIS_TIMEOUT' ||
+                          err.code === ERROR_CODES.AEGIS_TIMEOUT ||
+                          err.code === 'ETIMEDOUT' ||
+                          err.code === 'ESOCKETTIMEDOUT' ||
+                          err.name === 'TimeoutError' ||
+                          /timed?\s*out|timeout/i.test(err.message);
+
+        if (isTimeout) {
+          const timeoutVal = err.timeoutMs || executionTimeoutMs;
+          this.ledger.append('TOOL_CALL_TIMEOUT', {
+            id,
+            server: serverName,
+            tool: toolName,
+            durationMs,
+            timeoutMs: timeoutVal,
+            error: err.message
+          });
+
+          return createError(
+            id,
+            ERROR_CODES.AEGIS_TIMEOUT,
+            `Tool execution timed out after ${timeoutVal}ms: ${err.message}`,
+            {
+              tool: toolName,
+              server: serverName,
+              timeoutMs: timeoutVal,
+              durationMs,
+              recommendation: 'Increase execution timeout threshold or optimize tool operation.'
+            }
+          );
+        }
+
         this.ledger.append('TOOL_CALL_ERROR', {
           id,
           server: serverName,
@@ -384,7 +471,7 @@ class AegisProxyServer {
         // Health endpoint
         if (url.pathname === '/health') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'healthy', version: '1.2.0', uptime: process.uptime() }));
+          res.end(JSON.stringify({ status: 'healthy', version: '1.3.0', uptime: process.uptime() }));
           return;
         }
 
@@ -532,6 +619,29 @@ class AegisProxyServer {
             res.end(JSON.stringify({ error: err.message }));
           }
           return;
+        }
+
+        // Firewall Rate Limit Configuration endpoint
+        if (url.pathname === '/api/firewall/ratelimit') {
+          if (req.method === 'GET') {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(this.firewall.rateLimiter ? this.firewall.rateLimiter.getStats() : { enabled: false }));
+            return;
+          }
+          if (req.method === 'POST') {
+            const body = await this.readRequestBody(req, res);
+            if (body === null) return;
+            try {
+              const config = JSON.parse(body || '{}');
+              this.setRateLimit(config);
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: true, rateLimiter: this.firewall.rateLimiter.getStats() }));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+            return;
+          }
         }
 
         // Firewall Rules List endpoint

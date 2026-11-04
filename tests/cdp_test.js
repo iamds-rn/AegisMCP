@@ -346,6 +346,173 @@ async function run() {
     console.log('Drawer closed via backdrop?', drawerCloseRes.result.value);
     assert.strictEqual(drawerCloseRes.result.value.closed, true, 'Drawer must close when backdrop clicked');
 
+    // Return to desktop viewport
+    await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+    await sleep(300);
+
+    // ==============================================================
+    // Test Feature 1: Command Palette (Cmd+K / Ctrl+K)
+    // ==============================================================
+    console.log('Testing Command Palette modal & navigation...');
+    const paletteOpen = await send('Runtime.evaluate', {
+      expression: `
+        (() => {
+          const btn = document.getElementById('palette-trigger-btn');
+          if (!btn) return { error: 'NO PALETTE TRIGGER' };
+          btn.click();
+          const backdrop = document.getElementById('command-palette-backdrop');
+          const input = document.getElementById('palette-search-input');
+          return {
+            open: backdrop && backdrop.style.display === 'flex',
+            hasInput: !!input,
+            commandsCount: document.querySelectorAll('.palette-item').length
+          };
+        })()
+      `,
+      returnByValue: true
+    });
+    console.log('Palette open state:', paletteOpen.result.value);
+    assert.strictEqual(paletteOpen.result.value.open, true, 'Command palette modal must open on trigger click');
+    assert(paletteOpen.result.value.commandsCount >= 15, 'Command palette must render commands list');
+
+    // Screenshot open palette
+    const ssPalette = await send('Page.captureScreenshot', { format: 'png' });
+    fs.writeFileSync('tests/screenshot_command_palette.png', Buffer.from(ssPalette.data, 'base64'));
+    console.log('Saved tests/screenshot_command_palette.png');
+
+    // Filter in palette and navigate
+    const paletteNav = await send('Runtime.evaluate', {
+      expression: `
+        (() => {
+          const input = document.getElementById('palette-search-input');
+          input.value = 'fuzzer';
+          input.dispatchEvent(new Event('input'));
+          const filteredItems = document.querySelectorAll('.palette-item');
+          const firstItem = filteredItems[0];
+          if (firstItem) {
+            firstItem.click();
+          }
+          const backdrop = document.getElementById('command-palette-backdrop');
+          return {
+            closed: backdrop.style.display === 'none',
+            activeTab: document.querySelector('.nav-tab.active')?.getAttribute('data-tab')
+          };
+        })()
+      `,
+      returnByValue: true
+    });
+    console.log('Palette navigation result:', paletteNav.result.value);
+    assert.strictEqual(paletteNav.result.value.closed, true, 'Palette must close after item selection');
+    assert.strictEqual(paletteNav.result.value.activeTab, 'tab-fuzzer', 'Tab must switch to selected command target');
+
+    // ==============================================================
+    // Test Feature 2: Interactive Threat Log Filter Tags
+    // ==============================================================
+    console.log('Testing Interactive Threat Log Filter Tags in Cockpit...');
+    await send('Runtime.evaluate', { expression: `document.querySelector('.nav-tab[data-tab="tab-dashboard"]')?.click();` });
+    await sleep(200);
+
+    // Trigger a scenario to generate threat and audit events
+    await send('Runtime.evaluate', { expression: `document.getElementById('scenario-injection-btn')?.click();` });
+    await sleep(200);
+
+    const filterTestResult = await send('Runtime.evaluate', {
+      expression: `
+        (() => {
+          const tagAll = document.getElementById('filter-pill-all');
+          const tagBlock = document.getElementById('filter-pill-block');
+          const tagClean = document.getElementById('filter-pill-success');
+          const chipSec1 = document.querySelector('.filter-chip[data-rule="SEC-001"]');
+          const resetBtn = document.getElementById('filter-pill-reset');
+
+          // Initial counts
+          const countAll = parseInt(document.getElementById('filter-count-all')?.textContent || '0', 10);
+          const countBlock = parseInt(document.getElementById('filter-count-block')?.textContent || '0', 10);
+
+          // Click Blocked Threats filter
+          tagBlock.click();
+          const itemsAfterBlock = Array.from(document.querySelectorAll('#event-stream-container .event-item'));
+          const visibleAfterBlock = itemsAfterBlock.filter(el => !el.classList.contains('filter-hidden')).length;
+
+          // Click SEC-001 rule chip
+          chipSec1.click();
+          const visibleAfterSec1 = itemsAfterBlock.filter(el => !el.classList.contains('filter-hidden')).length;
+
+          // Click Reset
+          resetBtn.click();
+          const visibleAfterReset = itemsAfterBlock.filter(el => !el.classList.contains('filter-hidden')).length;
+
+          return {
+            countAll,
+            countBlock,
+            visibleAfterBlock,
+            visibleAfterSec1,
+            visibleAfterReset,
+            pillBlockActive: tagBlock.classList.contains('active'),
+            allPillActiveAfterReset: tagAll.classList.contains('active')
+          };
+        })()
+      `,
+      returnByValue: true
+    });
+    console.log('Threat filter test result:', filterTestResult.result.value);
+    assert(filterTestResult.result.value.countAll > 0, 'Must have events in stream');
+    assert.strictEqual(filterTestResult.result.value.allPillActiveAfterReset, true, 'All pill must be active after reset');
+
+    const ssFilter = await send('Page.captureScreenshot', { format: 'png' });
+    fs.writeFileSync('tests/screenshot_threat_filters.png', Buffer.from(ssFilter.data, 'base64'));
+    console.log('Saved tests/screenshot_threat_filters.png');
+
+    // ==============================================================
+    // Test Feature 3: Sound Effect Volume Controls
+    // ==============================================================
+    console.log('Testing Sound Effect Volume Controls & Popover...');
+    const soundTestResult = await send('Runtime.evaluate', {
+      expression: `
+        (() => {
+          const soundBtn = document.getElementById('sound-toggle-btn');
+          const popover = document.getElementById('sound-popover');
+          const slider = document.getElementById('sound-volume-slider');
+          const badge = document.getElementById('sound-vol-badge');
+          const preset25 = document.querySelector('.sound-preset-chip[data-volume="25"]');
+          const testBtn = document.getElementById('sound-test-btn');
+
+          // Open popover
+          soundBtn.click();
+          const popoverVisible = popover && popover.style.display === 'flex';
+
+          // Set slider to 75%
+          slider.value = '75';
+          slider.dispatchEvent(new Event('input'));
+          const badgeAt75 = badge.textContent.trim();
+
+          // Click 25% preset
+          preset25.click();
+          const badgeAt25 = badge.textContent.trim();
+
+          // Click test chime
+          testBtn.click();
+
+          return {
+            popoverVisible,
+            badgeAt75,
+            badgeAt25,
+            finalVolume: window.aegis ? window.aegis.sound.volume : null
+          };
+        })()
+      `,
+      returnByValue: true
+    });
+    console.log('Sound volume test result:', soundTestResult.result.value);
+    assert.strictEqual(soundTestResult.result.value.popoverVisible, true, 'Sound popover must open on button click');
+    assert.strictEqual(soundTestResult.result.value.badgeAt75, '75%', 'Volume badge must reflect slider input');
+    assert.strictEqual(soundTestResult.result.value.badgeAt25, '25%', 'Volume badge must reflect preset chip click');
+    assert.strictEqual(soundTestResult.result.value.finalVolume, 0.25, 'SoundEngine volume must be 0.25');
+
+    const ssSound = await send('Page.captureScreenshot', { format: 'png' });
+    fs.writeFileSync('tests/screenshot_sound_controls.png', Buffer.from(ssSound.data, 'base64'));
+    console.log('Saved tests/screenshot_sound_controls.png');
+
     ws.close();
   } finally {
     chromeProc.kill('SIGKILL');

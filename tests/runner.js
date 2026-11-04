@@ -20,11 +20,12 @@ const { runJsonRpcTests } = require('./test-jsonrpc');
 const { runProxyEndpointsTests } = require('./test-proxy-endpoints');
 const { runWebStudioTests } = require('./test-web-studio');
 const { runE2ETests } = require('./test-e2e');
+const { runMilestone2Tests } = require('./test-milestone2');
 
 async function main() {
   console.log(`
 🛡️  ==============================================================
-    AEGIS-MCP COMPREHENSIVE AUTOMATED TEST SUITE (v1.2.0)
+    AEGIS-MCP COMPREHENSIVE AUTOMATED TEST SUITE (v1.3.0)
 ==============================================================
 `);
 
@@ -45,7 +46,8 @@ async function main() {
     { name: 'RFC 7693 & JSON-RPC 2.0 Protocol Engine', fn: runJsonRpcTests },
     { name: 'MCP Proxy Gateway & Endpoints Conformance', fn: runProxyEndpointsTests },
     { name: 'Web Studio UI/UX & Client Architecture', fn: runWebStudioTests },
-    { name: 'End-to-End JSON-RPC & HTTP Gateway Server', fn: runE2ETests }
+    { name: 'End-to-End JSON-RPC & HTTP Gateway Server', fn: runE2ETests },
+    { name: 'Milestone 2 Rate Limiter (-32003) & Execution Timeout (-32005)', fn: runMilestone2Tests }
   ];
 
   for (const suite of suites) {
@@ -85,6 +87,8 @@ async function main() {
       ✔ Multi-Server DAG Pipeline Orchestration
       ✔ Zero-Install In-Memory Server Sandboxing
       ✔ RFC 7693 / JSON-RPC 2.0 / MCP 2024-11-05 Conformance
+      ✔ Sliding-Window Token Bucket Rate Limiter (-32003 AEGIS_RATE_LIMIT_EXCEEDED)
+      ✔ Deterministic Execution Timeout Mapping (-32005 AEGIS_TIMEOUT)
 ==============================================================
 `);
 }

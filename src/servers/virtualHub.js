@@ -465,6 +465,17 @@ class VirtualHttpSimulatorServer {
       if (!args || !args.url || typeof args.url !== 'string' || !args.url.trim()) {
         throw new Error('Parameter "url" is required');
       }
+
+      if (args.simulateTimeout) {
+        const timeoutErr = new Error('Upstream socket connection timed out (ETIMEDOUT)');
+        timeoutErr.code = 'ETIMEDOUT';
+        throw timeoutErr;
+      }
+
+      if (typeof args.delayMs === 'number' && args.delayMs > 0) {
+        await new Promise(r => setTimeout(r, args.delayMs));
+      }
+
       const url = String(args.url);
       // Mock endpoints
       if (url.includes('api.github.com/status')) {
