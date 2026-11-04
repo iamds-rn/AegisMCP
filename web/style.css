@@ -90,6 +90,39 @@ button, input, select, textarea {
   color: inherit;
 }
 
+input[type="text"],
+input[type="search"],
+input[type="number"],
+input[type="password"],
+select,
+textarea {
+  background: var(--bg-input);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-xs);
+  padding: 7px 10px;
+  color: var(--text-primary);
+  font-size: 12px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+input[type="text"]:focus,
+input[type="search"]:focus,
+input[type="number"]:focus,
+input[type="password"]:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 1px var(--border-focus);
+  background: #0f121d;
+}
+
+select option {
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+}
+
 code, pre {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -1326,7 +1359,16 @@ code, pre {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   position: relative;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-height: 220px;
+}
+
+.dag-canvas-wrapper {
+  position: relative;
+  min-width: 1060px;
+  height: 100%;
+  min-height: 220px;
 }
 
 #dag-canvas {
@@ -1900,3 +1942,249 @@ input:checked + .slider:before {
 .text-green { color: var(--accent-emerald); }
 .text-crimson { color: var(--accent-crimson); }
 .text-purple { color: var(--accent-purple); }
+
+/* ==============================================================
+   Fuzzer Empty State & Feature Badges
+   ============================================================== */
+.fuzzer-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 36px 20px;
+  background: var(--bg-card);
+  border: 1px dashed var(--border-medium);
+  border-radius: var(--radius-md);
+  margin-top: 14px;
+}
+
+.fuzzer-empty-icon {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: var(--accent-primary-faint);
+  color: var(--accent-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+.fuzzer-empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.fuzzer-empty-desc {
+  max-width: 580px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  margin-bottom: 18px;
+}
+
+.fuzzer-features-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.fuzzer-feature-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 5px 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* ==============================================================
+   Mobile Menu Button & Drawer Backdrop
+   ============================================================== */
+.mobile-menu-btn {
+  display: none;
+  margin-right: 4px;
+}
+
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  top: 54px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(2px);
+  z-index: 80;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+.sidebar-backdrop.visible {
+  display: block;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ==============================================================
+   Responsive Layout & Media Breakpoints (Linear/Cloudflare Spec)
+   ============================================================== */
+
+/* 1. Large Laptops / Screens <= 1240px */
+@media (max-width: 1240px) {
+  .quick-scenarios {
+    gap: 4px;
+  }
+  .scenario-label {
+    display: none;
+  }
+  .btn-scenario span {
+    display: none;
+  }
+  .btn-scenario {
+    padding: 6px 9px;
+  }
+  .dashboard-split {
+    grid-template-columns: 1fr 340px;
+  }
+}
+
+/* 2. Compact Desktops & Tablets <= 1024px */
+@media (max-width: 1024px) {
+  .dashboard-split {
+    grid-template-columns: 1fr;
+  }
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .tool-studio-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  .tool-selector-panel {
+    max-height: 260px;
+  }
+  .custom-rule-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .custom-rule-grid button {
+    grid-column: span 2;
+  }
+  .synthesizer-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .connect-server-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .fleet-cards-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .scorecard-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+}
+
+/* 3. Small Tablets & Rail Sidebar Mode <= 840px */
+@media (max-width: 840px) {
+  .mobile-menu-btn {
+    display: flex;
+  }
+  .brand-tagline, .protocol-badge {
+    display: none;
+  }
+  .aegis-sidebar {
+    width: 60px;
+    padding: 10px 6px;
+    transition: width 0.2s ease;
+  }
+  .aegis-sidebar .nav-group-label,
+  .aegis-sidebar .tab-text,
+  .aegis-sidebar .sidebar-footer {
+    display: none;
+  }
+  .nav-tab {
+    justify-content: center;
+    padding: 8px;
+  }
+  .nav-tab .tab-svg {
+    margin: 0;
+  }
+}
+
+/* 4. Mobile Viewports <= 640px */
+@media (max-width: 640px) {
+  .quick-scenarios {
+    display: none;
+  }
+  .aegis-header {
+    height: 48px;
+    padding: 0 10px;
+  }
+  .version-tag {
+    display: none;
+  }
+  .status-label {
+    display: none;
+  }
+  .status-indicator {
+    padding: 4px;
+  }
+  .btn-github span {
+    display: none;
+  }
+  .btn-github {
+    padding: 6px;
+  }
+  .aegis-sidebar {
+    position: fixed;
+    top: 48px;
+    bottom: 0;
+    left: -240px;
+    width: 240px !important;
+    z-index: 90;
+    background: var(--bg-surface);
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.6);
+    transition: left 0.25s ease;
+  }
+  .aegis-sidebar.mobile-open {
+    left: 0;
+  }
+  .aegis-sidebar.mobile-open .nav-group-label,
+  .aegis-sidebar.mobile-open .tab-text,
+  .aegis-sidebar.mobile-open .sidebar-footer {
+    display: block;
+  }
+  .aegis-sidebar.mobile-open .nav-tab {
+    justify-content: flex-start;
+    padding: 8px 12px;
+  }
+  .aegis-sidebar.mobile-open .tab-svg {
+    margin-right: 8px;
+  }
+  .aegis-stage {
+    padding: 10px;
+  }
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+  .fuzzer-config-row {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+  .client-tabs {
+    flex-wrap: wrap;
+  }
+  .scorecard-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}

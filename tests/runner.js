@@ -16,6 +16,8 @@ const { runConfigGeneratorTests } = require('./test-config-generator');
 const { runPipelineTests } = require('./test-pipeline');
 const { runFuzzerTests } = require('./test-fuzzer');
 const { runExploitGeneratorTests } = require('./test-exploit-generator');
+const { runJsonRpcTests } = require('./test-jsonrpc');
+const { runProxyEndpointsTests } = require('./test-proxy-endpoints');
 const { runE2ETests } = require('./test-e2e');
 
 async function main() {
@@ -39,6 +41,8 @@ async function main() {
     { name: 'AI Client Configuration Generator', fn: runConfigGeneratorTests },
     { name: 'Visual DAG Pipeline Engine', fn: runPipelineTests },
     { name: 'Protocol Fuzzer & Conformance Auditor', fn: runFuzzerTests },
+    { name: 'RFC 7693 & JSON-RPC 2.0 Protocol Engine', fn: runJsonRpcTests },
+    { name: 'MCP Proxy Gateway & Endpoints Conformance', fn: runProxyEndpointsTests },
     { name: 'End-to-End JSON-RPC & HTTP Gateway Server', fn: runE2ETests }
   ];
 

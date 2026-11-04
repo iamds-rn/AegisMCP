@@ -13,6 +13,13 @@
   <!-- Top Global Header -->
   <header class="aegis-header">
     <div class="logo-group">
+      <button class="btn-icon mobile-menu-btn" id="mobile-menu-btn" title="Toggle Navigation Menu" aria-label="Toggle Navigation">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
       <div class="logo-shield">
         <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="#38bdf8" fill="rgba(56, 189, 248, 0.12)"/>
@@ -232,6 +239,7 @@
         </div>
       </div>
     </aside>
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
 
     <!-- Main Content Stage -->
     <main class="aegis-stage">
@@ -532,10 +540,10 @@
           <div class="custom-rule-card">
             <div class="section-subhead">ADD CUSTOM SECURITY REGEX RULE</div>
             <div class="custom-rule-grid">
-              <input type="text" id="custom-rule-id" placeholder="Rule ID (e.g. CUST-01)" value="CUST-01">
-              <input type="text" id="custom-rule-name" placeholder="Rule Name" value="Deny Internal Token Exfiltration">
-              <input type="text" id="custom-rule-regex" placeholder="Regex Pattern" value="bearer\s+[a-zA-Z0-9_-]{20,}">
-              <select id="custom-rule-severity">
+              <input type="text" id="custom-rule-id" class="form-input" placeholder="Rule ID (e.g. CUST-01)" value="CUST-01">
+              <input type="text" id="custom-rule-name" class="form-input" placeholder="Rule Name" value="Deny Internal Token Exfiltration">
+              <input type="text" id="custom-rule-regex" class="form-input" placeholder="Regex Pattern" value="bearer\s+[a-zA-Z0-9_-]{20,}">
+              <select id="custom-rule-severity" class="form-select">
                 <option value="CRITICAL">CRITICAL</option>
                 <option value="HIGH">HIGH</option>
                 <option value="MEDIUM">MEDIUM</option>
@@ -579,6 +587,25 @@
                 </svg>
                 Launch Fuzz Campaign
               </button>
+            </div>
+ 
+            <!-- Fuzzer Pre-Run Overview -->
+            <div class="fuzzer-empty-state" id="fuzzer-empty-state">
+              <div class="fuzzer-empty-icon">
+                <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M10 2v7.31L4.5 19.5A2 2 0 0 0 6.24 22h11.52a2 2 0 0 0 1.74-2.5L14 9.31V2"/>
+                  <line x1="8.5" y1="2" x2="15.5" y2="2"/>
+                </svg>
+              </div>
+              <h3 class="fuzzer-empty-title">Automated Schema Mutation & Boundary Fuzzer</h3>
+              <p class="fuzzer-empty-desc">
+                Select a target MCP tool above and click "Launch Fuzz Campaign" to inject 12 adversarial test vectors including Unicode null-byte escapes, command chaining, high-entropy secrets, and boundary buffers.
+              </p>
+              <div class="fuzzer-features-grid">
+                <div class="fuzzer-feature-chip"><span>⚡</span> Sub-millisecond Pre-flight Invariants</div>
+                <div class="fuzzer-feature-chip"><span>🛡️</span> Zero-Trust Protocol RFC 7693 Conformance</div>
+                <div class="fuzzer-feature-chip"><span>🔍</span> Automated Diagnostics & Blast Radius Logging</div>
+              </div>
             </div>
 
             <!-- Fuzzer Progress & Scorecard -->
@@ -751,9 +778,11 @@
 
           <!-- Interactive Visual DAG Canvas -->
           <div class="dag-canvas-container" id="dag-canvas-container">
-            <canvas id="dag-canvas"></canvas>
-            <div class="dag-nodes-overlay" id="dag-nodes-overlay">
-              <!-- Rendered Nodes -->
+            <div class="dag-canvas-wrapper" id="dag-canvas-wrapper">
+              <canvas id="dag-canvas"></canvas>
+              <div class="dag-nodes-overlay" id="dag-nodes-overlay">
+                <!-- Rendered Nodes -->
+              </div>
             </div>
           </div>
 

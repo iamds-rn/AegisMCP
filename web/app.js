@@ -97,22 +97,91 @@ class SoundEngine {
 }
 
 // ==============================================================
-// 2. Browser-Native Cryptography & Hashing
+// 2. Browser-Native Cryptography & Synchronous SHA-256
 // ==============================================================
-async function browserSha256(str) {
-  if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
-    const buffer = new TextEncoder().encode(str);
-    const hashBuffer = await window.crypto.subtle.digest('SHA-256', buffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+function sha256Sync(str) {
+  if (typeof str !== 'string') {
+    str = JSON.stringify(str) || '';
   }
-  // Pure JS SHA-256 hash fallback
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = (hash << 5) - hash + str.charCodeAt(i);
-    hash |= 0;
+  const utf8 = unescape(encodeURIComponent(str));
+  function rightRotate(value, amount) {
+    return (value >>> amount) | (value << (32 - amount));
   }
-  return Math.abs(hash).toString(16).padStart(64, '0');
+  const maxWord = 0x100000000;
+  let i, j;
+  let result = '';
+  const words = [];
+  const asciiBitLength = utf8.length * 8;
+  const hash = [
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+  ];
+  const k = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+  ];
+
+  let padded = utf8 + '\x80';
+  while ((padded.length % 64) !== 56) padded += '\x00';
+  for (i = 0; i < padded.length; i++) {
+    words[i >> 2] |= (padded.charCodeAt(i) & 0xff) << (((3 - i) % 4) * 8);
+  }
+  words.push((asciiBitLength / maxWord) | 0);
+  words.push(asciiBitLength | 0);
+
+  for (j = 0; j < words.length; j += 16) {
+    const w = words.slice(j, j + 16);
+    const oldHash = [...hash];
+
+    for (i = 0; i < 64; i++) {
+      if (i >= 16) {
+        const w15 = w[i - 15], w2 = w[i - 2];
+        const s0 = rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3);
+        const s1 = rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10);
+        w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+      }
+      const e = hash[4];
+      const s1 = rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25);
+      const ch = (e & hash[5]) ^ (~e & hash[6]);
+      const temp1 = (hash[7] + s1 + ch + k[i] + w[i]) | 0;
+
+      const a = hash[0];
+      const s0 = rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22);
+      const maj = (a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]);
+      const temp2 = (s0 + maj) | 0;
+
+      hash[7] = hash[6];
+      hash[6] = hash[5];
+      hash[5] = hash[4];
+      hash[4] = (hash[3] + temp1) | 0;
+      hash[3] = hash[2];
+      hash[2] = hash[1];
+      hash[1] = hash[0];
+      hash[0] = (temp1 + temp2) | 0;
+    }
+
+    for (i = 0; i < 8; i++) {
+      hash[i] = (hash[i] + oldHash[i]) | 0;
+    }
+  }
+
+  for (i = 0; i < 8; i++) {
+    for (j = 3; j >= 0; j--) {
+      const b = (hash[i] >> (8 * j)) & 255;
+      result += (b < 16 ? '0' : '') + b.toString(16);
+    }
+  }
+  return result;
+}
+
+function browserSha256(str) {
+  return sha256Sync(str);
 }
 
 function calculateShannonEntropy(str) {
@@ -367,34 +436,34 @@ class BrowserLedger {
     this.initGenesis();
   }
 
-  async initGenesis() {
+  initGenesis() {
     const timestamp = '2026-11-04T00:00:00.000Z';
     const prevHash = '0000000000000000000000000000000000000000000000000000000000000000';
     const event = { type: 'GENESIS', description: 'AegisMCP Audit Ledger Initialized' };
-    const hash = await browserSha256(`0|${timestamp}|${prevHash}|${JSON.stringify(event)}`);
-    this.chain.push({ index: 0, timestamp, prevHash, event, hash });
+    const hash = sha256Sync(`0|${timestamp}|${prevHash}|${JSON.stringify(event)}`);
+    this.chain = [{ index: 0, timestamp, prevHash, event, hash }];
   }
 
-  async append(type, data) {
+  append(type, data) {
     const prev = this.chain[this.chain.length - 1];
-    const index = prev.index + 1;
+    const index = (prev ? prev.index : -1) + 1;
     const timestamp = new Date().toISOString();
-    const prevHash = prev.hash;
+    const prevHash = prev ? prev.hash : '0000000000000000000000000000000000000000000000000000000000000000';
     const event = { type, ...data };
-    const hash = await browserSha256(`${index}|${timestamp}|${prevHash}|${JSON.stringify(event)}`);
+    const hash = sha256Sync(`${index}|${timestamp}|${prevHash}|${JSON.stringify(event)}`);
     const block = { index, timestamp, prevHash, event, hash };
     this.chain.push(block);
     return block;
   }
 
-  async verify() {
+  verify() {
     for (let i = 1; i < this.chain.length; i++) {
       const curr = this.chain[i];
       const prev = this.chain[i - 1];
       if (curr.prevHash !== prev.hash) {
         return { valid: false, brokenIndex: curr.index, reason: 'Broken prevHash pointer' };
       }
-      const expected = await browserSha256(`${curr.index}|${curr.timestamp}|${curr.prevHash}|${JSON.stringify(curr.event)}`);
+      const expected = sha256Sync(`${curr.index}|${curr.timestamp}|${curr.prevHash}|${JSON.stringify(curr.event)}`);
       if (curr.hash !== expected) {
         return { valid: false, brokenIndex: curr.index, reason: 'Hash tampering detected' };
       }
@@ -444,7 +513,7 @@ class BrowserLedger {
           reason: 'Broken prevHash pointer'
         };
       }
-      const expected = await browserSha256(`${curr.index}|${curr.timestamp}|${curr.prevHash}|${JSON.stringify(curr.event)}`);
+      const expected = sha256Sync(`${curr.index}|${curr.timestamp}|${curr.prevHash}|${JSON.stringify(curr.event)}`);
       if (curr.hash !== expected) {
         const original = this.tamperBackup.get(curr.index);
         let diff = null;
@@ -716,9 +785,32 @@ class AegisStudioApp {
   }
 
   setupTabs() {
+    const sidebar = document.querySelector('.aegis-sidebar');
+    const backdrop = document.getElementById('sidebar-backdrop');
+    const mobileBtn = document.getElementById('mobile-menu-btn');
+
+    if (mobileBtn && sidebar) {
+      mobileBtn.addEventListener('click', () => {
+        this.sound.playClick();
+        sidebar.classList.toggle('mobile-open');
+        if (backdrop) backdrop.classList.toggle('visible', sidebar.classList.contains('mobile-open'));
+      });
+    }
+
+    if (backdrop && sidebar) {
+      backdrop.addEventListener('click', () => {
+        sidebar.classList.remove('mobile-open');
+        backdrop.classList.remove('visible');
+      });
+    }
+
     document.querySelectorAll('.nav-tab').forEach(btn => {
       btn.addEventListener('click', () => {
         this.sound.playClick();
+        if (sidebar && sidebar.classList.contains('mobile-open')) {
+          sidebar.classList.remove('mobile-open');
+          if (backdrop) backdrop.classList.remove('visible');
+        }
         document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
         btn.classList.add('active');
@@ -731,6 +823,32 @@ class AegisStudioApp {
         }
       });
     });
+
+    // Global Command Shortcuts: Cmd+K / Ctrl+K to jump to tool search; Esc to clear
+    if (typeof window !== 'undefined') {
+      window.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+          e.preventDefault();
+          const toolTab = document.querySelector('.nav-tab[data-tab="tab-tools"]');
+          if (toolTab) toolTab.click();
+          const searchInput = document.getElementById('tool-search-input');
+          if (searchInput) {
+            searchInput.focus();
+            searchInput.select();
+          }
+        }
+        if (e.key === 'Escape') {
+          const searchInput = document.getElementById('tool-search-input');
+          if (searchInput && document.activeElement === searchInput) {
+            searchInput.blur();
+          }
+          if (sidebar && sidebar.classList.contains('mobile-open')) {
+            sidebar.classList.remove('mobile-open');
+            if (backdrop) backdrop.classList.remove('visible');
+          }
+        }
+      });
+    }
 
     // Sound toggle with clean SVG icon replacement
     const soundBtn = document.getElementById('sound-toggle-btn');
@@ -1137,7 +1255,8 @@ Grade: A+
     const tool = this.hub.getTool(toolName);
     const container = document.getElementById('fuzzer-scorecard-container');
     const tbody = document.getElementById('fuzz-results-body');
-
+    const emptyState = document.getElementById('fuzzer-empty-state');
+    if (emptyState) emptyState.style.display = 'none';
     if (container) container.style.display = 'flex';
     if (tbody) tbody.innerHTML = '';
 
@@ -1393,62 +1512,80 @@ Grade: A+
     const canvas = document.getElementById('dag-canvas');
     if (!canvas) return;
     const parent = canvas.parentElement;
-    canvas.width = parent.clientWidth;
-    canvas.height = parent.clientHeight;
+    const targetWidth = Math.max(parent ? parent.clientWidth : 1060, 1060);
+    const targetHeight = Math.max(parent ? parent.clientHeight : 220, 220);
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    canvas.style.width = `${targetWidth}px`;
+    canvas.style.height = `${targetHeight}px`;
+
+    const overlay = document.getElementById('dag-nodes-overlay');
+    if (overlay) {
+      overlay.style.width = `${targetWidth}px`;
+      overlay.style.height = `${targetHeight}px`;
+      overlay.innerHTML = '';
+    }
+
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Modern hairline developer grid
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.035)';
-    ctx.lineWidth = 1;
-    for (let x = 0; x < canvas.width; x += 24) {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+    // Subtle grid dots
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+    for (let x = 12; x < targetWidth; x += 24) {
+      for (let y = 12; y < targetHeight; y += 24) {
+        ctx.beginPath();
+        ctx.arc(x, y, 1, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
-    for (let y = 0; y < canvas.height; y += 24) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
-    }
-
-    // Render nodes overlay
-    const overlay = document.getElementById('dag-nodes-overlay');
-    if (!overlay) return;
-    overlay.innerHTML = '';
 
     for (let i = 0; i < this.pipelineNodes.length; i++) {
       const node = this.pipelineNodes[i];
-      const card = document.createElement('div');
-      card.id = `node-card-${node.id}`;
-      card.className = 'dag-node-card';
-      card.style.left = `${node.x}px`;
-      card.style.top = `${node.y}px`;
-      card.innerHTML = `
-        <div class="node-header">
-          <span class="node-title">${node.title}</span>
-          <span class="node-tool-badge">${node.tool}</span>
-        </div>
-        <div class="node-status-row">
-          <span>${node.server}</span>
-          <span class="node-status" id="status-${node.id}">IDLE</span>
-        </div>
-      `;
-      overlay.appendChild(card);
+      if (overlay) {
+        const card = document.createElement('div');
+        card.id = `node-card-${node.id}`;
+        card.className = 'dag-node-card';
+        card.style.left = `${node.x}px`;
+        card.style.top = `${node.y}px`;
+        card.innerHTML = `
+          <div class="node-header">
+            <span class="node-title">${node.title}</span>
+            <span class="node-tool-badge">${node.tool}</span>
+          </div>
+          <div class="node-status-row">
+            <span>${node.server}</span>
+            <span class="node-status" id="status-${node.id}">IDLE</span>
+          </div>
+        `;
+        overlay.appendChild(card);
+      }
 
       // Connect bezier curve to next node
       if (i < this.pipelineNodes.length - 1) {
         const next = this.pipelineNodes[i + 1];
         const startX = node.x + 220;
-        const startY = node.y + 30;
+        const startY = node.y + 35;
         const endX = next.x;
-        const endY = next.y + 30;
+        const endY = next.y + 35;
         const cpX = (startX + endX) / 2;
 
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.65)';
+        // Glow pass
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.15)';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.bezierCurveTo(cpX, startY, cpX, endY, endX, endY);
+        ctx.stroke();
+
+        // Main line
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.75)';
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(startX, startY);
         ctx.bezierCurveTo(cpX, startY, cpX, endY, endX, endY);
         ctx.stroke();
 
-        // Signal packet dot
+        // Pin dots
         ctx.fillStyle = '#38bdf8';
         ctx.beginPath();
         ctx.arc(startX, startY, 3, 0, Math.PI * 2);
@@ -1461,7 +1598,7 @@ Grade: A+
   async runDAGPipeline() {
     this.sound.playClick();
     const logBox = document.getElementById('pipeline-log-display');
-    if (logBox) logBox.innerHTML = '<div style="color: var(--accent-primary)">▶ Initializing DAG Multi-Server Pipeline Execution...</div>';
+    if (logBox) logBox.innerHTML = '<div class="pipeline-log-entry" style="color: var(--accent-primary)">▶ Initializing DAG Multi-Server Pipeline Execution...</div>';
     const statusBadge = document.getElementById('pipeline-status-badge');
     if (statusBadge) statusBadge.textContent = 'RUNNING';
 
@@ -1474,7 +1611,7 @@ Grade: A+
       if (statusEl) statusEl.textContent = 'RUNNING';
 
       this.sound.playClick();
-      await new Promise(r => setTimeout(r, 320));
+      await new Promise(r => setTimeout(r, 260));
 
       const interpolate = (val) => {
         if (typeof val === 'string') {
@@ -1499,17 +1636,35 @@ Grade: A+
         resolvedParams[k] = interpolate(v);
       }
 
-      const tool = this.hub.getTool(node.tool);
-      const res = await tool.fn(resolvedParams);
-      let parsed = JSON.parse(res.content[0].text);
+      try {
+        const tool = this.hub.getTool(node.tool);
+        const res = await tool.fn(resolvedParams);
+        let parsed;
+        try {
+          parsed = JSON.parse(res.content[0].text);
+        } catch {
+          parsed = { text: res.content[0].text };
+        }
 
-      context.nodes[node.id] = { output: parsed };
-      if (card) card.className = 'dag-node-card success';
-      if (statusEl) statusEl.textContent = 'SUCCESS';
+        context.nodes[node.id] = { output: parsed };
+        if (card) card.className = 'dag-node-card success';
+        if (statusEl) statusEl.textContent = 'SUCCESS';
 
-      if (logBox) {
-        logBox.innerHTML += `<div style="margin-top: 4px; color: var(--accent-emerald)">✔ [${node.server}] ${node.tool} complete: <code>${JSON.stringify(parsed).slice(0, 60)}...</code></div>`;
-        logBox.scrollTop = logBox.scrollHeight;
+        if (logBox) {
+          logBox.innerHTML += `<div class="pipeline-log-entry" style="margin-top: 4px; color: var(--accent-emerald)">✔ [${node.server}] ${node.tool} complete: <code>${JSON.stringify(parsed).slice(0, 60)}...</code></div>`;
+          logBox.scrollTop = logBox.scrollHeight;
+        }
+      } catch (err) {
+        if (card) card.className = 'dag-node-card failed';
+        if (statusEl) statusEl.textContent = 'FAILED';
+        if (logBox) {
+          logBox.innerHTML += `<div class="pipeline-log-entry" style="margin-top: 4px; color: var(--accent-crimson)">✖ [${node.server}] ${node.tool} failed: ${err.message}</div>`;
+          logBox.scrollTop = logBox.scrollHeight;
+        }
+        if (statusBadge) statusBadge.textContent = 'FAILED';
+        this.sound.playBlock();
+        this.logEvent('PIPELINE_ERROR', `Pipeline node ${node.id} failed: ${err.message}`, 'block');
+        return;
       }
     }
 
@@ -1909,15 +2064,24 @@ Grade: A+
 
     const copyBtn = document.getElementById('copy-config-btn');
     if (copyBtn) {
+      const origHtml = copyBtn.innerHTML;
       copyBtn.addEventListener('click', () => {
         const text = document.getElementById('client-config-code').textContent;
-        navigator.clipboard.writeText(text).then(() => {
+        const doCopy = () => {
           this.sound.playSuccess();
-          copyBtn.textContent = '✔ Copied!';
-          setTimeout(() => { copyBtn.textContent = 'Copy Snippet'; }, 2000);
-        }).catch(() => {
-          copyBtn.textContent = '✔ Copied!';
-        });
+          copyBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            <span style="color: #10b981; font-weight: 600;">Copied!</span>
+          `;
+          setTimeout(() => { copyBtn.innerHTML = origHtml; }, 2000);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(doCopy).catch(doCopy);
+        } else {
+          doCopy();
+        }
       });
     }
 

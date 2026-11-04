@@ -20,9 +20,14 @@ const { DynamicRuleSynthesizer } = require('../firewall/synthesizer');
 const { ExploitPayloadGenerator } = require('../firewall/exploitGenerator');
 const { ClientConfigGenerator } = require('./configGenerator');
 
+const DEFAULT_MAX_BODY_SIZE = 1024 * 1024; // 1MB (1,048,576 bytes)
+
 class AegisProxyServer {
   constructor(options = {}) {
     this.port = options.port || 3333;
+    this.maxBodySize = typeof options.maxBodySize === 'number' && options.maxBodySize > 0
+      ? options.maxBodySize
+      : DEFAULT_MAX_BODY_SIZE;
     this.firewall = options.firewall || new FirewallEngine({ mode: MODES.ENFORCE });
     this.ledger = options.ledger || new AuditLedger();
     this.hub = options.hub || new VirtualHub();
@@ -41,6 +46,19 @@ class AegisProxyServer {
    */
   async handleJsonRpc(reqObj) {
     const { id, method, params } = reqObj;
+
+    // 0. Notification Absorption
+    // JSON-RPC 2.0 notifications omit 'id', or methods prefixed with 'notifications/' or '$/'
+    // Under RFC 7693 / JSON-RPC 2.0 Section 4.1, the server MUST NOT reply to notifications.
+    const isNotification = id === undefined || (typeof method === 'string' && (method.startsWith('notifications/') || method.startsWith('$/')));
+    if (isNotification) {
+      if (method === 'notifications/initialized') {
+        this.ledger.append('PROTOCOL_INITIALIZED', { clientParams: params });
+      } else {
+        this.ledger.append('NOTIFICATION_RECEIVED', { method, params });
+      }
+      return null;
+    }
 
     // 1. Core MCP Protocol Handshake
     if (method === 'initialize') {
@@ -65,7 +83,22 @@ class AegisProxyServer {
       });
     }
 
-    // 2. Tools Discovery: tools/list
+    // 2. Protocol Liveness Ping Probe
+    if (method === 'ping') {
+      return createResponse(id, {});
+    }
+
+    // 3. Resources Discovery Stub: resources/list
+    if (method === 'resources/list') {
+      return createResponse(id, { resources: [] });
+    }
+
+    // 4. Prompts Discovery Stub: prompts/list
+    if (method === 'prompts/list') {
+      return createResponse(id, { prompts: [] });
+    }
+
+    // 5. Tools Discovery: tools/list
     if (method === 'tools/list') {
       const allTools = this.hub.listAllTools();
       return createResponse(id, {
@@ -80,7 +113,7 @@ class AegisProxyServer {
       });
     }
 
-    // 3. Tool Invocations: tools/call
+    // 6. Tool Invocations: tools/call
     if (method === 'tools/call') {
       const rawName = params ? params.name : '';
       if (!rawName || typeof rawName !== 'string') {
@@ -162,6 +195,127 @@ class AegisProxyServer {
 
     // Unrecognized method
     return createError(id, ERROR_CODES.METHOD_NOT_FOUND, `Method not found: ${method}`);
+  }
+
+  /**
+   * Reads and bounds incoming HTTP request bodies against streaming DoS.
+   * Rejects oversized payloads with HTTP 413 and releases socket resources.
+   * @param {http.IncomingMessage} req
+   * @param {http.ServerResponse} res
+   * @param {number} [maxLimit]
+   * @returns {Promise<string|null>} Resolves with body string, or null if aborted/closed.
+   */
+  readRequestBody(req, res, maxLimit = this.maxBodySize) {
+    return new Promise((resolve, reject) => {
+      // 1. Fast-fail if Content-Length header exceeds limit
+      const contentLengthHeader = req.headers['content-length'];
+      if (contentLengthHeader !== undefined) {
+        const declaredLength = parseInt(contentLengthHeader, 10);
+        if (!Number.isNaN(declaredLength) && declaredLength > maxLimit) {
+          req.resume(); // Discard unread bytes
+          this._abortWith413(req, res, maxLimit, declaredLength);
+          return resolve(null);
+        }
+      }
+
+      let receivedBytes = 0;
+      const chunks = [];
+      let isAborted = false;
+
+      const onData = (chunk) => {
+        if (isAborted) return;
+        receivedBytes += chunk.length;
+        if (receivedBytes > maxLimit) {
+          isAborted = true;
+          req.pause();
+          req.removeListener('data', onData);
+          chunks.length = 0; // Release memory buffer immediately
+          this._abortWith413(req, res, maxLimit, receivedBytes);
+          resolve(null);
+        } else {
+          chunks.push(chunk);
+        }
+      };
+
+      const onEnd = () => {
+        if (isAborted) return;
+        const fullBody = Buffer.concat(chunks, receivedBytes).toString('utf8');
+        resolve(fullBody);
+      };
+
+      const onClose = () => {
+        if (isAborted) return;
+        isAborted = true;
+        chunks.length = 0;
+        resolve(null);
+      };
+
+      const onError = (err) => {
+        if (isAborted) return;
+        isAborted = true;
+        chunks.length = 0;
+        reject(err);
+      };
+
+      req.on('data', onData);
+      req.on('end', onEnd);
+      req.on('close', onClose);
+      req.on('error', onError);
+    });
+  }
+
+  /**
+   * Aborts an oversized request with HTTP 413 and schedules socket destruction.
+   * @private
+   */
+  _abortWith413(req, res, limit, received) {
+    if (res.headersSent) {
+      if (req.socket && !req.socket.destroyed) req.socket.destroy();
+      return;
+    }
+
+    const isRpc = req.url && (req.url.startsWith('/rpc') || req.url.startsWith('/mcp'));
+    let responseBody;
+    if (isRpc) {
+      responseBody = JSON.stringify(
+        createError(
+          null,
+          ERROR_CODES.AEGIS_PAYLOAD_TOO_LARGE,
+          `Payload Too Large: request body exceeds maximum limit of ${limit} bytes`,
+          { limit, received }
+        )
+      );
+    } else {
+      responseBody = JSON.stringify({
+        error: 'Payload Too Large',
+        code: ERROR_CODES.AEGIS_PAYLOAD_TOO_LARGE,
+        message: `Request body exceeds maximum limit of ${limit} bytes`,
+        limit,
+        received
+      });
+    }
+
+    res.writeHead(413, {
+      'Content-Type': 'application/json',
+      'Connection': 'close',
+      'Access-Control-Allow-Origin': '*'
+    });
+    res.end(responseBody);
+
+    const socket = req.socket;
+    if (socket) {
+      const fallbackTimer = setTimeout(() => {
+        if (!socket.destroyed) socket.destroy();
+      }, 1000);
+      fallbackTimer.unref();
+
+      res.once('finish', () => {
+        clearTimeout(fallbackTimer);
+        setTimeout(() => {
+          if (!socket.destroyed) socket.destroy();
+        }, 50).unref();
+      });
+    }
   }
 
   /**
@@ -269,45 +423,41 @@ class AegisProxyServer {
 
         // Ledger Tamper Simulation endpoint
         if (req.method === 'POST' && url.pathname === '/api/ledger/tamper') {
-          let body = '';
-          req.on('data', chunk => { body += chunk; });
-          req.on('end', () => {
-            try {
-              const { index, event } = JSON.parse(body || '{}');
-              const targetIdx = index !== undefined ? parseInt(index, 10) : 1;
-              this.ledger.tamper(targetIdx, event || { tampered: true, attacker: 'Adversary Simulation', timestamp: new Date().toISOString() });
-              const forensics = this.ledger.locateTamper();
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ success: true, tamperedIndex: targetIdx, forensics }));
-            } catch (err) {
-              res.writeHead(400, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: err.message }));
-            }
-          });
+          const body = await this.readRequestBody(req, res);
+          if (body === null) return;
+          try {
+            const { index, event } = JSON.parse(body || '{}');
+            const targetIdx = index !== undefined ? parseInt(index, 10) : 1;
+            this.ledger.tamper(targetIdx, event || { tampered: true, attacker: 'Adversary Simulation', timestamp: new Date().toISOString() });
+            const forensics = this.ledger.locateTamper();
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, tamperedIndex: targetIdx, forensics }));
+          } catch (err) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          }
           return;
         }
 
         // Ledger Restore endpoint
         if (req.method === 'POST' && url.pathname === '/api/ledger/restore') {
-          let body = '';
-          req.on('data', chunk => { body += chunk; });
-          req.on('end', () => {
-            try {
-              const { index } = JSON.parse(body || '{}');
-              let result;
-              if (index !== undefined) {
-                const restored = this.ledger.restoreChain(parseInt(index, 10));
-                result = { restoredIndex: index, success: restored, verification: this.ledger.verify() };
-              } else {
-                result = this.ledger.restoreAll();
-              }
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify(result));
-            } catch (err) {
-              res.writeHead(400, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: err.message }));
+          const body = await this.readRequestBody(req, res);
+          if (body === null) return;
+          try {
+            const { index } = JSON.parse(body || '{}');
+            let result;
+            if (index !== undefined) {
+              const restored = this.ledger.restoreChain(parseInt(index, 10));
+              result = { restoredIndex: index, success: restored, verification: this.ledger.verify() };
+            } else {
+              result = this.ledger.restoreAll();
             }
-          });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(result));
+          } catch (err) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          }
           return;
         }
 
@@ -338,53 +488,49 @@ class AegisProxyServer {
 
         // External Server Register endpoint
         if (req.method === 'POST' && url.pathname === '/api/servers/register') {
-          let body = '';
-          req.on('data', chunk => { body += chunk; });
-          req.on('end', async () => {
-            try {
-              const { name, command, args, url: serverUrl } = JSON.parse(body || '{}');
-              if (!name || (!command && !serverUrl)) {
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: 'Field "name" and either "command" or "url" are required.' }));
-                return;
-              }
-              const server = await this.hub.registerExternalServer({
-                name,
-                command,
-                args: Array.isArray(args) ? args : [],
-                url: serverUrl
-              });
-              this.ledger.append('EXTERNAL_SERVER_REGISTERED', {
-                name,
-                command: command || serverUrl,
-                toolsCount: server.getTools().length
-              });
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ success: true, server: { name, tools: server.getTools() } }));
-            } catch (err) {
-              res.writeHead(500, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: err.message }));
+          const body = await this.readRequestBody(req, res);
+          if (body === null) return;
+          try {
+            const { name, command, args, url: serverUrl } = JSON.parse(body || '{}');
+            if (!name || (!command && !serverUrl)) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Field "name" and either "command" or "url" are required.' }));
+              return;
             }
-          });
+            const server = await this.hub.registerExternalServer({
+              name,
+              command,
+              args: Array.isArray(args) ? args : [],
+              url: serverUrl
+            });
+            this.ledger.append('EXTERNAL_SERVER_REGISTERED', {
+              name,
+              command: command || serverUrl,
+              toolsCount: server.getTools().length
+            });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, server: { name, tools: server.getTools() } }));
+          } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          }
           return;
         }
 
         // Server Remove endpoint
         if (req.method === 'POST' && url.pathname === '/api/servers/remove') {
-          let body = '';
-          req.on('data', chunk => { body += chunk; });
-          req.on('end', () => {
-            try {
-              const { name } = JSON.parse(body || '{}');
-              const removed = this.hub.removeServer(name);
-              this.ledger.append('SERVER_REMOVED', { name, success: removed });
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ success: removed }));
-            } catch (err) {
-              res.writeHead(500, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: err.message }));
-            }
-          });
+          const body = await this.readRequestBody(req, res);
+          if (body === null) return;
+          try {
+            const { name } = JSON.parse(body || '{}');
+            const removed = this.hub.removeServer(name);
+            this.ledger.append('SERVER_REMOVED', { name, success: removed });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: removed }));
+          } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          }
           return;
         }
 
@@ -400,73 +546,67 @@ class AegisProxyServer {
 
         // Firewall Rule Toggle endpoint
         if (req.method === 'POST' && url.pathname === '/api/firewall/rules/toggle') {
-          let body = '';
-          req.on('data', chunk => { body += chunk; });
-          req.on('end', () => {
-            try {
-              const { ruleId } = JSON.parse(body || '{}');
-              const state = this.firewall.toggleRule(ruleId);
-              this.ledger.append('FIREWALL_RULE_TOGGLED', { ruleId, enabled: state });
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ ruleId, enabled: state }));
-            } catch (err) {
-              res.writeHead(400, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: err.message }));
-            }
-          });
+          const body = await this.readRequestBody(req, res);
+          if (body === null) return;
+          try {
+            const { ruleId } = JSON.parse(body || '{}');
+            const state = this.firewall.toggleRule(ruleId);
+            this.ledger.append('FIREWALL_RULE_TOGGLED', { ruleId, enabled: state });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ruleId, enabled: state }));
+          } catch (err) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          }
           return;
         }
 
         // Dynamic Rule Synthesizer endpoint
         if (req.method === 'POST' && url.pathname === '/api/firewall/synthesize') {
-          let body = '';
-          req.on('data', chunk => { body += chunk; });
-          req.on('end', () => {
-            try {
-              const { tool, toolName, serverName, pattern, signatureName, severity } = JSON.parse(body || '{}');
-              let targetTool = tool;
-              if (!targetTool && toolName) {
-                const sName = serverName || 'virtual_filesystem';
-                const s = this.hub.getServer(sName);
-                if (s) {
-                  targetTool = s.getTools().find(t => t.name === toolName);
-                }
+          const body = await this.readRequestBody(req, res);
+          if (body === null) return;
+          try {
+            const { tool, toolName, serverName, pattern, signatureName, severity } = JSON.parse(body || '{}');
+            let targetTool = tool;
+            if (!targetTool && toolName) {
+              const sName = serverName || 'virtual_filesystem';
+              const s = this.hub.getServer(sName);
+              if (s) {
+                targetTool = s.getTools().find(t => t.name === toolName);
               }
-              let rules = [];
-              if (targetTool) {
-                rules = this.synthesizer.synthesizeRulesForTool(targetTool);
-              } else if (pattern) {
-                const r = this.synthesizer.synthesizeRuleFromPattern(signatureName || 'Dynamic Custom Rule', pattern, severity || 'HIGH', toolName);
-                rules = [r];
-              }
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ rules }));
-            } catch (err) {
-              res.writeHead(400, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: err.message }));
             }
-          });
+            let rules = [];
+            if (targetTool) {
+              rules = this.synthesizer.synthesizeRulesForTool(targetTool);
+            } else if (pattern) {
+              const r = this.synthesizer.synthesizeRuleFromPattern(signatureName || 'Dynamic Custom Rule', pattern, severity || 'HIGH', toolName);
+              rules = [r];
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ rules }));
+          } catch (err) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          }
           return;
         }
 
         // Add Custom Rule endpoint
         if (req.method === 'POST' && url.pathname === '/api/firewall/rules/add') {
-          let body = '';
-          req.on('data', chunk => { body += chunk; });
-          req.on('end', () => {
-            try {
-              const { id, name, severity, pattern, targetTool } = JSON.parse(body || '{}');
-              const rule = this.synthesizer.synthesizeRuleFromPattern(name || 'Custom Dynamic Rule', pattern, severity || 'HIGH', targetTool);
-              if (id) rule.id = id;
-              this.firewall.addCustomRule(rule);
-              this.ledger.append('CUSTOM_RULE_HOT_LOADED', { ruleId: rule.id, name: rule.name });
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ success: true, rule: { id: rule.id, name: rule.name, severity: rule.severity } }));
-            } catch (err) {
-              res.writeHead(400, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: err.message }));
-            }
-          });
+          const body = await this.readRequestBody(req, res);
+          if (body === null) return;
+          try {
+            const { id, name, severity, pattern, targetTool } = JSON.parse(body || '{}');
+            const rule = this.synthesizer.synthesizeRuleFromPattern(name || 'Custom Dynamic Rule', pattern, severity || 'HIGH', targetTool);
+            if (id) rule.id = id;
+            this.firewall.addCustomRule(rule);
+            this.ledger.append('CUSTOM_RULE_HOT_LOADED', { ruleId: rule.id, name: rule.name });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, rule: { id: rule.id, name: rule.name, severity: rule.severity } }));
+          } catch (err) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          }
           return;
         }
 
@@ -490,130 +630,129 @@ class AegisProxyServer {
 
         // JSON-RPC endpoint
         if (req.method === 'POST' && (url.pathname === '/rpc' || url.pathname === '/mcp')) {
-          let body = '';
-          req.on('data', chunk => { body += chunk; });
-          req.on('end', async () => {
-            const parsed = parseMessage(body);
-            if (!parsed.ok) {
-              res.writeHead(400, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify(parsed.error));
-              return;
-            }
-            const response = await this.handleJsonRpc(parsed.message);
+          const body = await this.readRequestBody(req, res);
+          if (body === null) return;
+
+          const parsed = parseMessage(body);
+          if (!parsed.ok) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(parsed.error));
+            return;
+          }
+          const response = await this.handleJsonRpc(parsed.message);
+          if (response) {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify(response));
-          });
+          } else {
+            // Notification absorbed silently: HTTP 204 No Content per protocol
+            res.writeHead(204);
+            res.end();
+          }
           return;
         }
 
         // Fuzzer API endpoint
         if (req.method === 'POST' && url.pathname === '/api/fuzz') {
-          let body = '';
-          req.on('data', chunk => { body += chunk; });
-          req.on('end', async () => {
-            try {
-              const data = JSON.parse(body || '{}');
-              const { serverName = 'virtual_filesystem', toolName = 'read_file', withFirewall = true } = data;
-              const server = this.hub.getServer(serverName);
-              if (!server) {
-                res.writeHead(404, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: `Server not found: ${serverName}` }));
-                return;
-              }
-              const tool = server.getTools().find(t => t.name === toolName);
-              if (!tool) {
-                res.writeHead(404, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: `Tool not found: ${toolName}` }));
-                return;
-              }
-
-              const invoker = (tName, payload) => server.callTool(tName, payload);
-              const audit = await this.fuzzer.runAudit(tool, invoker, withFirewall ? this.firewall : null);
-
-              this.ledger.append('FUZZ_AUDIT_COMPLETED', {
-                server: serverName,
-                tool: toolName,
-                grade: audit.grade,
-                scorePct: audit.scorePct,
-                totalTests: audit.totalTests
-              });
-
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify(audit));
-            } catch (err) {
-              res.writeHead(500, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: err.message }));
+          const body = await this.readRequestBody(req, res);
+          if (body === null) return;
+          try {
+            const data = JSON.parse(body || '{}');
+            const { serverName = 'virtual_filesystem', toolName = 'read_file', withFirewall = true } = data;
+            const server = this.hub.getServer(serverName);
+            if (!server) {
+              res.writeHead(404, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: `Server not found: ${serverName}` }));
+              return;
             }
-          });
+            const tool = server.getTools().find(t => t.name === toolName);
+            if (!tool) {
+              res.writeHead(404, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: `Tool not found: ${toolName}` }));
+              return;
+            }
+
+            const invoker = (tName, payload) => server.callTool(tName, payload);
+            const audit = await this.fuzzer.runAudit(tool, invoker, withFirewall ? this.firewall : null);
+
+            this.ledger.append('FUZZ_AUDIT_COMPLETED', {
+              server: serverName,
+              tool: toolName,
+              grade: audit.grade,
+              scorePct: audit.scorePct,
+              totalTests: audit.totalTests
+            });
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(audit));
+          } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          }
           return;
         }
 
         // Exploit Payload Generator & Resilience Auditor API endpoint
         if (req.method === 'POST' && url.pathname === '/api/firewall/exploit-audit') {
-          let body = '';
-          req.on('data', chunk => { body += chunk; });
-          req.on('end', async () => {
-            try {
-              const data = JSON.parse(body || '{}');
-              const { serverName = 'virtual_filesystem', toolName = 'read_file', withFirewall = true, autoHotReload = false } = data;
-              const server = this.hub.getServer(serverName);
-              if (!server) {
-                res.writeHead(404, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: `Server not found: ${serverName}` }));
-                return;
-              }
-              const tool = server.getTools().find(t => t.name === toolName);
-              if (!tool) {
-                res.writeHead(404, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: `Tool not found: ${toolName}` }));
-                return;
-              }
-
-              const invoker = (tName, payload) => server.callTool(tName, payload);
-              const audit = await this.exploitGen.runExploitAudit(tool, withFirewall ? this.firewall : null, invoker);
-
-              if (autoHotReload && audit.autoSynthesizedRules && audit.autoSynthesizedRules.length > 0) {
-                for (const rule of audit.autoSynthesizedRules) {
-                  this.firewall.addCustomRule(rule);
-                  this.ledger.append('CUSTOM_RULE_HOT_LOADED', { ruleId: rule.id, name: rule.name, source: 'EXPLOIT_AUDITOR' });
-                }
-              }
-
-              this.ledger.append('EXPLOIT_AUDIT_COMPLETED', {
-                server: serverName,
-                tool: toolName,
-                grade: audit.grade,
-                defenseScorePct: audit.defenseScorePct,
-                totalExploits: audit.totalExploits,
-                vulnerableCount: audit.vulnerableCount
-              });
-
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify(audit));
-            } catch (err) {
-              res.writeHead(500, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: err.message }));
+          const body = await this.readRequestBody(req, res);
+          if (body === null) return;
+          try {
+            const data = JSON.parse(body || '{}');
+            const { serverName = 'virtual_filesystem', toolName = 'read_file', withFirewall = true, autoHotReload = false } = data;
+            const server = this.hub.getServer(serverName);
+            if (!server) {
+              res.writeHead(404, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: `Server not found: ${serverName}` }));
+              return;
             }
-          });
+            const tool = server.getTools().find(t => t.name === toolName);
+            if (!tool) {
+              res.writeHead(404, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: `Tool not found: ${toolName}` }));
+              return;
+            }
+
+            const invoker = (tName, payload) => server.callTool(tName, payload);
+            const audit = await this.exploitGen.runExploitAudit(tool, withFirewall ? this.firewall : null, invoker);
+
+            if (autoHotReload && audit.autoSynthesizedRules && audit.autoSynthesizedRules.length > 0) {
+              for (const rule of audit.autoSynthesizedRules) {
+                this.firewall.addCustomRule(rule);
+                this.ledger.append('CUSTOM_RULE_HOT_LOADED', { ruleId: rule.id, name: rule.name, source: 'EXPLOIT_AUDITOR' });
+              }
+            }
+
+            this.ledger.append('EXPLOIT_AUDIT_COMPLETED', {
+              server: serverName,
+              tool: toolName,
+              grade: audit.grade,
+              defenseScorePct: audit.defenseScorePct,
+              totalExploits: audit.totalExploits,
+              vulnerableCount: audit.vulnerableCount
+            });
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(audit));
+          } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          }
           return;
         }
 
         // Pipeline Run endpoint
         if (req.method === 'POST' && url.pathname === '/api/pipeline/run') {
-          let body = '';
-          req.on('data', chunk => { body += chunk; });
-          req.on('end', async () => {
-            try {
-              const pipeline = JSON.parse(body || '{}');
-              const invoker = (sName, tName, p) => this.hub.executeTool(sName, tName, p);
-              const result = await this.dagEngine.executePipeline(pipeline, invoker);
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify(result));
-            } catch (err) {
-              res.writeHead(400, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: err.message }));
-            }
-          });
+          const body = await this.readRequestBody(req, res);
+          if (body === null) return;
+          try {
+            const pipeline = JSON.parse(body || '{}');
+            const invoker = (sName, tName, p) => this.hub.executeTool(sName, tName, p);
+            const result = await this.dagEngine.executePipeline(pipeline, invoker);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(result));
+          } catch (err) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          }
           return;
         }
 
@@ -659,7 +798,9 @@ class AegisProxyServer {
       });
 
       this.httpServer.listen(port, () => {
-        this.ledger.append('SERVER_START_HTTP', { port });
+        const assignedPort = this.httpServer.address().port;
+        this.port = assignedPort;
+        this.ledger.append('SERVER_START_HTTP', { port: assignedPort });
         resolve(this.httpServer);
       });
 
@@ -678,5 +819,6 @@ class AegisProxyServer {
 }
 
 module.exports = {
-  AegisProxyServer
+  AegisProxyServer,
+  DEFAULT_MAX_BODY_SIZE
 };
