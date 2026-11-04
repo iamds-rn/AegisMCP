@@ -3,9 +3,9 @@
 > **Zero-Trust Security Firewall, Resilience Fuzzer, External Stdio Tunnel, and Visual Observability Cockpit for the Model Context Protocol (MCP)**
 
 [![Protocol: MCP 2024-11-05](https://img.shields.io/badge/Protocol-MCP%202024--11--05-00f0ff.svg)](https://modelcontextprotocol.io)
-[![Tests: All Passing](https://img.shields.io/badge/Tests-200%2B%20Assertions%20Passing%20(20%20Suites)-00ff9d.svg)](tests/)
-[![Security: Zero--Trust](https://img.shields.io/badge/Security-Zero--Trust%20Firewall%20(SEC--001..009)-ff3366.svg)](docs/FIREWALL_RULES.md)
-[![Audit: Merkle Hash Chain](https://img.shields.io/badge/Audit-SHA--256%20Merkle%20Ledger-9d4edd.svg)](docs/ARCHITECTURE.md)
+[![Tests: All Passing](https://img.shields.io/badge/Tests-250%2B%20Assertions%20Passing%20(21%20Suites)-00ff9d.svg)](tests/)
+[![Security: Zero--Trust](https://img.shields.io/badge/Security-Zero--Trust%20Firewall%20(SEC--001..009%20%2B%20SEM--001)-ff3366.svg)](docs/FIREWALL_RULES.md)
+[![Audit: Merkle Hash Chain](https://img.shields.io/badge/Audit-SHA--256%20Merkle%20Ledger%20%2B%20Inclusion%20Proofs-9d4edd.svg)](docs/ARCHITECTURE.md)
 [![Dependencies: 0 External](https://img.shields.io/badge/Dependencies-0%20External-blue.svg)](package.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -28,7 +28,42 @@ However, **LLMs generate tool parameters probabilistically**. When an agent enco
 
 ---
 
-## ✨ Key Pillars & Innovations (v1.5.0)
+## ✨ Key Pillars & Innovations (v1.6.0)
+
+### 🌟 Milestone 6: The 7 Enterprise Architectural Innovations (NEW in v1.6.0)
+
+1. **Granular Attribute-Based Access Control (ABAC) & Human-in-the-Loop (HITL) Gate**:
+   - Role-based permissions (`admin`, `developer`, `reader`) with tool pattern matching and parameter-level regex constraints.
+   - High-blast-radius execution pauses with `-32006 (AEGIS_AWAITING_APPROVAL)` and cryptographic token approval lifecycle via UI and REST API (`/api/approvals`).
+   - Unauthorized attempts blocked with standard code `-32007 (AEGIS_ACCESS_DENIED)`.
+
+2. **Distributed Remote MCP Tunneling & Mutual TLS (mTLS) Mesh**:
+   - Zero-dependency encrypted tunneling over TLS with client certificate verification.
+   - Rejects unauthorized or untrusted peer certificates with `-32008 (AEGIS_MTLS_UNAUTHORIZED)`.
+   - Bridges local AI clients (Claude Desktop, Cursor) to remote cloud VPC MCP servers securely.
+
+3. **Lightweight Semantic Guardrails & Output PII/Secrets Scrubber**:
+   - Native character/word n-gram vector cosine similarity against calibrated adversarial intent centroids (System Prompt Extraction, Instruction Override, DAN/Jailbreak Personas).
+   - Bi-directional inspection: scrubs tool return payloads before reaching the LLM, redacting AWS keys, GitHub PATs, JWTs, private keys, Luhn-checked credit cards, and SSNs with `[REDACTED_BY_AEGIS_SHIELD:<type>]`.
+
+4. **Cryptographic Binary Merkle Tree & O(log N) Inclusion Proofs (`AuditProof`)**:
+   - Domain-separated binary Merkle tree over ledger leaf hashes.
+   - Standalone constant-time inclusion proof verification (`MerkleTree.verifyProof`) allowing external third-party auditors to verify any tool call without revealing confidential block payloads.
+   - Accessible via REST (`/api/ledger/proof/inclusion`) and CLI (`aegis-mcp --verify-proof <file>`).
+
+5. **Runtime Micro-Sandboxing (Wasm & Isolated VM)**:
+   - Native WebAssembly sandbox (`WasmSandbox`) with strict memory page bounding (64KB pages) and execution timeouts.
+   - Isolated JavaScript evaluation sandbox (`IsolatedVmSandbox`) with stripped globals (`no process, require, fs`).
+
+6. **Continuous Autonomous Red-Teaming & Dynamic Immune Auto-Defense**:
+   - Autonomous background mutation loop generating adversarial variants across registered tool schemas.
+   - Automatically synthesizes targeted countermeasures (`IMMUNE-xxx`), tests them, and hot-patches the firewall without restart.
+   - Accessible via REST (`/api/immune/*`) and CLI (`aegis-mcp --immune-audit`).
+
+7. **Enterprise Observability & OpenTelemetry (OTel) / Prometheus Metrics**:
+   - W3C Trace Context (`traceparent`) parsing and propagation across all requests and tool spans.
+   - Prometheus metrics text exposition endpoint (`GET /metrics`) exporting request counts, block counters, tool latency histograms, heap memory, and ledger height.
+   - Accessible via CLI (`aegis-mcp --metrics`).
 
 ### 1. 🔄 Supervised External Process Management & Exponential Crash Recovery (NEW in v1.5.0)
 - **Automatic Crash-Recovery Backoff**: Supervised child processes automatically restart with jittered exponential backoff (`maxRetries`, `backoffBaseMs`, `maxBackoffMs`).
