@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AegisMCP - Zero-Trust Security Firewall & Resilience Studio for MCP</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body class="dark-theme">
+  <!-- Top Global Header -->
+  <header class="aegis-header">
+    <div class="logo-group">
+      <div class="logo-shield">
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" fill="rgba(0, 240, 255, 0.15)" stroke="#00f0ff"/>
+          <path d="M9 12l2 2 4-4" stroke="#00ff9d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="logo-text">
+        <div class="title-row">
+          <span class="brand-title">AEGIS<span class="accent">MCP</span></span>
+          <span class="version-tag">v1.0.0</span>
+          <span class="protocol-badge">MCP 2024-11-05</span>
+        </div>
+        <span class="brand-tagline">Zero-Trust Tool Firewall & Resilience Studio</span>
+      </div>
+    </div>
+
+    <!-- Center Quick Scenarios Bar -->
+    <div class="quick-scenarios">
+      <span class="scenario-label">Quick Scenarios:</span>
+      <button class="btn-scenario" id="scenario-injection-btn" title="Simulate Prompt-Injected Attack Interception">
+        <span class="icon">🚨</span> Threat Block
+      </button>
+      <button class="btn-scenario" id="scenario-pipeline-btn" title="Run Multi-Server DAG Pipeline">
+        <span class="icon">⚡</span> Run DAG Pipeline
+      </button>
+      <button class="btn-scenario" id="scenario-fuzz-btn" title="Run Adversarial Fuzzing Audit">
+        <span class="icon">🔬</span> Fuzz Tool
+      </button>
+      <button class="btn-scenario" id="scenario-tamper-btn" title="Tamper with Ledger to Test Cryptographic Defense">
+        <span class="icon">🔐</span> Tamper Test
+      </button>
+    </div>
+
+    <!-- Header Actions & Controls -->
+    <div class="header-actions">
+      <div class="status-indicator live" id="connection-status">
+        <span class="status-dot"></span>
+        <span class="status-label">SANDBOX MODE</span>
+      </div>
+      <button class="btn-icon" id="sound-toggle-btn" title="Toggle Sound Effects">
+        <span id="sound-icon">🔊</span>
+      </button>
+      <a href="https://github.com/iamds-rn/AegisMCP" target="_blank" class="btn-github" rel="noreferrer">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+          <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+        </svg>
+        GitHub
+      </a>
+    </div>
+  </header>
+
+  <!-- Main Studio Shell -->
+  <div class="aegis-container">
+    <!-- Sidebar Navigation -->
+    <aside class="aegis-sidebar">
+      <nav class="nav-tabs">
+        <button class="nav-tab active" data-tab="tab-dashboard">
+          <span class="tab-icon">📊</span>
+          <span class="tab-text">Cockpit</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-tools">
+          <span class="tab-icon">🛠️</span>
+          <span class="tab-text">Tool Studio</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-firewall">
+          <span class="tab-icon">🛡️</span>
+          <span class="tab-text">Firewall Rules</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-fuzzer">
+          <span class="tab-icon">🔬</span>
+          <span class="tab-text">Protocol Fuzzer</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-pipeline">
+          <span class="tab-icon">⚡</span>
+          <span class="tab-text">Visual DAG</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-ledger">
+          <span class="tab-icon">🔐</span>
+          <span class="tab-text">Audit Ledger</span>
+        </button>
+      </nav>
+
+      <!-- Sidebar Server Fleet Info -->
+      <div class="sidebar-footer">
+        <div class="server-fleet-title">VIRTUAL SERVER FLEET</div>
+        <div class="fleet-items">
+          <div class="fleet-item"><span class="fleet-dot green"></span> filesystem-mcp (5 tools)</div>
+          <div class="fleet-item"><span class="fleet-dot green"></span> memory-kv-mcp (5 tools)</div>
+          <div class="fleet-item"><span class="fleet-dot green"></span> crypto-vault-mcp (4 tools)</div>
+          <div class="fleet-item"><span class="fleet-dot green"></span> http-simulator-mcp (1 tool)</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Stage -->
+    <main class="aegis-stage">
+      
+      <!-- TAB 1: COCKPIT DASHBOARD -->
+      <section class="tab-pane active" id="tab-dashboard">
+        <!-- Telemetry Stats Cards -->
+        <div class="stats-grid">
+          <div class="stat-card cyan">
+            <div class="stat-header">
+              <span class="stat-label">TOTAL EVALUATIONS</span>
+              <span class="stat-icon">📈</span>
+            </div>
+            <div class="stat-value" id="stat-total-evals">0</div>
+            <div class="stat-sub">Zero-Trust Real-time Inspection</div>
+          </div>
+          <div class="stat-card red">
+            <div class="stat-header">
+              <span class="stat-label">THREATS INTERCEPTED</span>
+              <span class="stat-icon">🛡️</span>
+            </div>
+            <div class="stat-value" id="stat-total-blocked">0</div>
+            <div class="stat-sub" id="stat-block-sub">0% block rate</div>
+          </div>
+          <div class="stat-card purple">
+            <div class="stat-header">
+              <span class="stat-label">SANITIZED CALLS</span>
+              <span class="stat-icon">✨</span>
+            </div>
+            <div class="stat-value" id="stat-total-sanitized">0</div>
+            <div class="stat-sub">Credentials & Traversal Scrubbed</div>
+          </div>
+          <div class="stat-card green">
+            <div class="stat-header">
+              <span class="stat-label">LEDGER HEIGHT</span>
+              <span class="stat-icon">🔗</span>
+            </div>
+            <div class="stat-value" id="stat-ledger-height">1</div>
+            <div class="stat-sub" id="stat-ledger-status">SHA-256 Merkle Chain Pristine</div>
+          </div>
+        </div>
+
+        <!-- Two Column Live Cockpit -->
+        <div class="dashboard-split">
+          <!-- Left: Real-time Event Feed -->
+          <div class="panel stream-panel">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <span class="pulse-indicator"></span>
+                <span class="panel-title">Live Protocol Event Stream</span>
+              </div>
+              <div class="panel-actions">
+                <button class="btn-sm" id="clear-stream-btn">Clear Log</button>
+              </div>
+            </div>
+            <div class="event-stream" id="event-stream-container">
+              <!-- Dynamically populated event cards -->
+            </div>
+          </div>
+
+          <!-- Right: Security Threat Radar & Quick Firewall Controls -->
+          <div class="panel radar-panel">
+            <div class="panel-header">
+              <span class="panel-title">Active Threat Interception Radar</span>
+              <span class="badge badge-enforce" id="current-mode-badge">MODE: ENFORCE</span>
+            </div>
+            <div class="radar-content">
+              <div class="threat-breakdown">
+                <div class="threat-row">
+                  <span class="threat-name">Path Traversal (SEC-001)</span>
+                  <div class="threat-bar-bg"><div class="threat-bar red" id="bar-sec-001" style="width: 0%"></div></div>
+                  <span class="threat-count" id="count-sec-001">0</span>
+                </div>
+                <div class="threat-row">
+                  <span class="threat-name">Command Injection (SEC-002)</span>
+                  <div class="threat-bar-bg"><div class="threat-bar red" id="bar-sec-002" style="width: 0%"></div></div>
+                  <span class="threat-count" id="count-sec-002">0</span>
+                </div>
+                <div class="threat-row">
+                  <span class="threat-name">Secret Leakage (SEC-003)</span>
+                  <div class="threat-bar-bg"><div class="threat-bar red" id="bar-sec-003" style="width: 0%"></div></div>
+                  <span class="threat-count" id="count-sec-003">0</span>
+                </div>
+                <div class="threat-row">
+                  <span class="threat-name">SSRF / Metadata Exfil (SEC-004)</span>
+                  <div class="threat-bar-bg"><div class="threat-bar red" id="bar-sec-004" style="width: 0%"></div></div>
+                  <span class="threat-count" id="count-sec-004">0</span>
+                </div>
+                <div class="threat-row">
+                  <span class="threat-name">DoS / Payload Radius (SEC-005)</span>
+                  <div class="threat-bar-bg"><div class="threat-bar red" id="bar-sec-005" style="width: 0%"></div></div>
+                  <span class="threat-count" id="count-sec-005">0</span>
+                </div>
+              </div>
+
+              <!-- Live Firewall Mode Switcher -->
+              <div class="mode-switcher-box">
+                <span class="box-title">Select Firewall Policy Mode:</span>
+                <div class="mode-options">
+                  <label class="mode-radio">
+                    <input type="radio" name="firewall-mode" value="ENFORCE" checked>
+                    <span class="radio-label">
+                      <strong>ENFORCE</strong>
+                      <small>Block & isolate violations</small>
+                    </span>
+                  </label>
+                  <label class="mode-radio">
+                    <input type="radio" name="firewall-mode" value="SANITIZE">
+                    <span class="radio-label">
+                      <strong>SANITIZE</strong>
+                      <small>Redact secrets & sanitize</small>
+                    </span>
+                  </label>
+                  <label class="mode-radio">
+                    <input type="radio" name="firewall-mode" value="AUDIT_ONLY">
+                    <span class="radio-label">
+                      <strong>AUDIT_ONLY</strong>
+                      <small>Allow through & log alerts</small>
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: INTERACTIVE TOOL STUDIO -->
+      <section class="tab-pane" id="tab-tools">
+        <div class="tool-studio-layout">
+          <!-- Tool Catalog Column -->
+          <div class="panel tool-selector-panel">
+            <div class="panel-header">
+              <span class="panel-title">MCP Tools Explorer</span>
+              <span class="badge" id="total-tools-count">15 Tools</span>
+            </div>
+            <div class="tool-search-box">
+              <input type="text" id="tool-search-input" placeholder="Search tools or servers...">
+            </div>
+            <div class="tool-list" id="tool-catalog-list">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+
+          <!-- Tool Invocation & Schema Inspector -->
+          <div class="panel tool-runner-panel">
+            <div class="panel-header">
+              <div class="tool-selected-info">
+                <span class="tool-header-title" id="selected-tool-name">read_file</span>
+                <span class="tool-header-server" id="selected-tool-server">virtual_filesystem</span>
+              </div>
+              <div class="tool-actions">
+                <button class="btn-primary" id="execute-tool-btn">
+                  <span class="icon">▶</span> Execute Tool
+                </button>
+              </div>
+            </div>
+
+            <p class="tool-desc-text" id="selected-tool-desc">Read textual content of a file at the specified virtual path.</p>
+
+            <!-- Dynamic Schema Form -->
+            <div class="form-container">
+              <div class="section-subhead">ARGUMENTS (JSON SCHEMA)</div>
+              <div id="dynamic-form-fields">
+                <!-- Dynamically generated fields -->
+              </div>
+            </div>
+
+            <!-- Pre-flight Security & Response Box -->
+            <div class="execution-output-box">
+              <div class="tab-subnav">
+                <button class="subnav-btn active" data-subtab="subtab-response">Result Output</button>
+                <button class="subnav-btn" data-subtab="subtab-security">Firewall Pre-Flight</button>
+                <button class="subnav-btn" data-subtab="subtab-raw">Raw JSON-RPC 2.0</button>
+              </div>
+              <div class="subtab-pane active" id="subtab-response">
+                <pre class="code-preview" id="tool-result-display">// Execute the tool to observe output</pre>
+              </div>
+              <div class="subtab-pane" id="subtab-security">
+                <div id="firewall-preflight-display" class="preflight-box">
+                  <span class="preflight-status safe">✔ Parameters Pass All Zero-Trust Firewall Checks</span>
+                </div>
+              </div>
+              <div class="subtab-pane" id="subtab-raw">
+                <pre class="code-preview" id="raw-jsonrpc-display">// Raw JSON-RPC frame will appear here</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: FIREWALL RULES MANAGER -->
+      <section class="tab-pane" id="tab-firewall">
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">Zero-Trust Security Policies & Threat Detection Rules</span>
+            <button class="btn-secondary" id="reset-rules-btn">Restore Defaults</button>
+          </div>
+          <div class="rules-table-container">
+            <table class="rules-table">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Rule ID</th>
+                  <th>Policy Name</th>
+                  <th>Severity</th>
+                  <th>Description</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="rules-table-body">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Add Custom Rule Card -->
+          <div class="custom-rule-card">
+            <div class="section-subhead">ADD CUSTOM SECURITY REGEX RULE</div>
+            <div class="custom-rule-grid">
+              <input type="text" id="custom-rule-id" placeholder="Rule ID (e.g. CUST-01)" value="CUST-01">
+              <input type="text" id="custom-rule-name" placeholder="Rule Name" value="Deny Internal Token Exfiltration">
+              <input type="text" id="custom-rule-regex" placeholder="Regex Pattern" value="bearer\s+[a-zA-Z0-9_-]{20,}">
+              <select id="custom-rule-severity">
+                <option value="CRITICAL">CRITICAL</option>
+                <option value="HIGH">HIGH</option>
+                <option value="MEDIUM">MEDIUM</option>
+              </select>
+              <button class="btn-primary" id="add-custom-rule-btn">+ Add Policy</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: AUTOMATED PROTOCOL FUZZER -->
+      <section class="tab-pane" id="tab-fuzzer">
+        <div class="fuzzer-layout">
+          <!-- Control Panel -->
+          <div class="panel fuzzer-controls">
+            <div class="panel-header">
+              <span class="panel-title">Automated Resilience & Boundary Fuzzer</span>
+            </div>
+            <div class="fuzzer-config-row">
+              <div class="config-item">
+                <label>Target Tool:</label>
+                <select id="fuzz-target-tool" class="form-select">
+                  <!-- Populated dynamically -->
+                </select>
+              </div>
+              <div class="config-item">
+                <label>With Aegis Firewall Shield:</label>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="fuzz-firewall-toggle" checked>
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <button class="btn-primary" id="start-fuzz-btn">
+                <span class="icon">🔬</span> Launch Fuzzing Campaign
+              </button>
+            </div>
+
+            <!-- Fuzzer Progress & Scorecard -->
+            <div class="fuzzer-scorecard-container" id="fuzzer-scorecard-container" style="display: none;">
+              <div class="scorecard-header">
+                <div class="grade-badge" id="scorecard-grade">A+</div>
+                <div class="scorecard-metrics">
+                  <h3 id="scorecard-title">Resilience Score: 100%</h3>
+                  <p id="scorecard-summary">18 / 18 Adversarial Vectors Gracefully Defended</p>
+                </div>
+                <div class="scorecard-actions">
+                  <button class="btn-sm" id="download-report-btn">📥 Export Audit Report (MD)</button>
+                </div>
+              </div>
+
+              <!-- Test Vector Results Table -->
+              <div class="fuzz-results-scroll">
+                <table class="fuzz-results-table">
+                  <thead>
+                    <tr>
+                      <th>Adversarial Attack Vector</th>
+                      <th>Category</th>
+                      <th>Status</th>
+                      <th>Latency</th>
+                      <th>Diagnostics</th>
+                    </tr>
+                  </thead>
+                  <tbody id="fuzz-results-body">
+                    <!-- Populated dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 5: VISUAL DAG PIPELINE -->
+      <section class="tab-pane" id="tab-pipeline">
+        <div class="pipeline-container">
+          <div class="pipeline-toolbar">
+            <div class="toolbar-left">
+              <span class="pipeline-name">Pipeline: <strong id="active-pipeline-name">Token Mint & Vault Manifest</strong></span>
+              <span class="badge" id="pipeline-node-count">4 Nodes</span>
+            </div>
+            <div class="toolbar-right">
+              <button class="btn-secondary" id="reset-pipeline-btn">Reset Flow</button>
+              <button class="btn-primary" id="run-pipeline-btn">
+                <span class="icon">▶</span> Execute Pipeline
+              </button>
+            </div>
+          </div>
+
+          <!-- Interactive Visual DAG Canvas -->
+          <div class="dag-canvas-container" id="dag-canvas-container">
+            <canvas id="dag-canvas"></canvas>
+            <div class="dag-nodes-overlay" id="dag-nodes-overlay">
+              <!-- Rendered Nodes -->
+            </div>
+          </div>
+
+          <!-- Execution Timeline & Data Inspector -->
+          <div class="panel pipeline-console-panel">
+            <div class="panel-header">
+              <span class="panel-title">Pipeline Execution Log & Step Outputs</span>
+              <span class="badge green" id="pipeline-status-badge">READY</span>
+            </div>
+            <div class="pipeline-log-content" id="pipeline-log-display">
+              <p class="empty-state">Click "Execute Pipeline" above to run the multi-server DAG workflow.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 6: CRYPTOGRAPHIC AUDIT LEDGER -->
+      <section class="tab-pane" id="tab-ledger">
+        <div class="ledger-container">
+          <!-- Ledger Header & Verification Status -->
+          <div class="panel ledger-status-panel">
+            <div class="panel-header">
+              <div class="ledger-header-group">
+                <span class="panel-title">Cryptographic Tamper-Evident Hash Chain</span>
+                <span class="chain-status-badge pristine" id="ledger-integrity-badge">CHAIN INTEGRITY: PRISTINE</span>
+              </div>
+              <div class="ledger-controls">
+                <button class="btn-primary" id="verify-chain-btn">
+                  <span class="icon">🔍</span> Verify Chain Integrity
+                </button>
+                <button class="btn-danger" id="simulate-tamper-btn">
+                  <span class="icon">⚠️</span> Simulate Adversary Tamper Attack
+                </button>
+                <button class="btn-sm" id="export-proof-btn">
+                  <span class="icon">📜</span> Export Cryptographic Proof
+                </button>
+              </div>
+            </div>
+
+            <!-- Merkle Root & Hash Banner -->
+            <div class="merkle-banner">
+              <div class="merkle-item">
+                <span class="merkle-label">LATEST BLOCK HASH (HEAD):</span>
+                <code class="hash-text" id="latest-block-hash">0000000000000000000000000000000000000000000000000000000000000000</code>
+              </div>
+              <div class="merkle-item">
+                <span class="merkle-label">GENESIS HASH:</span>
+                <code class="hash-text" id="genesis-block-hash">0000000000000000000000000000000000000000000000000000000000000000</code>
+              </div>
+            </div>
+          </div>
+
+          <!-- Visual Block Chain Explorer -->
+          <div class="blocks-explorer-panel">
+            <div class="section-subhead">BLOCK CHAIN CHRONOLOGY</div>
+            <div class="blocks-container" id="blocks-chain-container">
+              <!-- Dynamically populated blocks -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
