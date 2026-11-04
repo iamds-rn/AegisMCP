@@ -6,6 +6,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const fs = require('node:fs');
 
 const GENESIS_PREV_HASH = '0000000000000000000000000000000000000000000000000000000000000000';
 
@@ -61,7 +62,49 @@ class AuditLedger {
     this.chain = [];
     this.archivedBlocks = [];
     this.tamperBackup = new Map();
-    this.initGenesisBlock();
+    this.persistence = null;
+
+    if (options.persistenceFilePath || options.filePath) {
+      const { AuditFilePersistence } = require('./filePersistence');
+      const targetPath = options.persistenceFilePath || options.filePath;
+      const persistence = new AuditFilePersistence(targetPath, options);
+      if (fs.existsSync(targetPath) && fs.statSync(targetPath).size > 0) {
+        const recoveredBlocks = persistence.recoverBlocks(options);
+        if (recoveredBlocks.length <= this.maxMemoryBlocks) {
+          this.chain = recoveredBlocks;
+          this.archivedBlocks = [];
+        } else {
+          this.archivedBlocks = recoveredBlocks.slice(0, recoveredBlocks.length - this.maxMemoryBlocks);
+          this.chain = recoveredBlocks.slice(-this.maxMemoryBlocks);
+        }
+        this.persistence = persistence;
+        persistence.ledger = this;
+      } else {
+        this.initGenesisBlock();
+        this.persistence = persistence;
+        persistence.ledger = this;
+        persistence.appendBlock(this.chain[0]);
+      }
+    } else if (options.persistence) {
+      const persistence = options.persistence;
+      this.persistence = persistence;
+      persistence.ledger = this;
+      if (persistence.filePath && fs.existsSync(persistence.filePath) && fs.statSync(persistence.filePath).size > 0) {
+        const recoveredBlocks = persistence.recoverBlocks(options);
+        if (recoveredBlocks.length <= this.maxMemoryBlocks) {
+          this.chain = recoveredBlocks;
+          this.archivedBlocks = [];
+        } else {
+          this.archivedBlocks = recoveredBlocks.slice(0, recoveredBlocks.length - this.maxMemoryBlocks);
+          this.chain = recoveredBlocks.slice(-this.maxMemoryBlocks);
+        }
+      } else {
+        this.initGenesisBlock();
+        persistence.appendBlock(this.chain[0]);
+      }
+    } else {
+      this.initGenesisBlock();
+    }
   }
 
   initGenesisBlock() {
@@ -104,6 +147,10 @@ class AuditLedger {
     if (this.chain.length > this.maxMemoryBlocks) {
       const pruned = this.chain.shift();
       this.archivedBlocks.push(pruned);
+    }
+
+    if (this.persistence) {
+      this.persistence.appendBlock(block);
     }
 
     return block;
@@ -416,11 +463,71 @@ class AuditLedger {
   getRecentBlocks(limit = 20) {
     return this.chain.slice(-limit).reverse();
   }
+
+  /**
+   * Factory method to load and reconstruct a ledger from a persistent JSONL file.
+   */
+  static loadFromFile(filePath, options = {}) {
+    const { AuditFilePersistence } = require('./filePersistence');
+    const persistence = new AuditFilePersistence(filePath, options);
+    return persistence.recoverLedger(options);
+  }
+
+  /**
+   * Attaches a file persistence instance to this ledger.
+   */
+  attachPersistence(persistence) {
+    this.persistence = persistence;
+    persistence.ledger = this;
+    return this;
+  }
+
+  /**
+   * Flushes any buffered writes to persistent storage.
+   */
+  flushPersistence() {
+    if (this.persistence && typeof this.persistence.flush === 'function') {
+      this.persistence.flush();
+    }
+  }
+
+  /**
+   * Cryptographically attests the latest block using an operator secret key.
+   */
+  attest(secretKey) {
+    const { attestBlock } = require('./attestation');
+    return attestBlock(this.getLatestBlock(), secretKey);
+  }
+
+  /**
+   * Attests a block and records an ATTESTATION_CHECKPOINT event into the chain.
+   */
+  attestCheckpoint(secretKey, options = {}) {
+    const { recordAttestationCheckpoint } = require('./attestation');
+    return recordAttestationCheckpoint(this, secretKey, options);
+  }
+
+  /**
+   * Verifies an ATTESTATION_CHECKPOINT block against the referenced block.
+   */
+  verifyAttestationCheckpoint(checkpointBlock, secretKey) {
+    const { verifyAttestationCheckpoint } = require('./attestation');
+    return verifyAttestationCheckpoint(this, checkpointBlock, secretKey);
+  }
+
+  /**
+   * Sweeps and verifies all ATTESTATION_CHECKPOINT events across the full chain.
+   */
+  verifyAllAttestations(secretKey) {
+    const { verifyAllAttestations } = require('./attestation');
+    return verifyAllAttestations(this, secretKey);
+  }
 }
 
 module.exports = {
   AuditBlock,
   AuditLedger,
   sha256,
-  canonicalStringify
+  canonicalStringify,
+  GENESIS_PREV_HASH
 };

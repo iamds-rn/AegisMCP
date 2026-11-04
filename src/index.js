@@ -8,7 +8,18 @@
 const jsonrpc = require('./protocol/jsonrpc');
 const rules = require('./firewall/rules');
 const { FirewallEngine, MODES } = require('./firewall/engine');
-const { AuditBlock, AuditLedger, sha256 } = require('./ledger/auditLedger');
+const { AuditBlock, AuditLedger, sha256, GENESIS_PREV_HASH } = require('./ledger/auditLedger');
+const { AuditFilePersistence, FilePersistence, LedgerPersistenceError } = require('./ledger/filePersistence');
+const {
+  attestBlock,
+  verifyAttestation,
+  recordAttestationCheckpoint,
+  createAttestationCheckpoint,
+  verifyAttestationCheckpoint,
+  verifyAllAttestations,
+  LedgerAttestor,
+  ATTESTATION_EVENT_TYPE
+} = require('./ledger/attestation');
 const { ProtocolFuzzer } = require('./fuzzer/fuzzer');
 const { DAGEngine } = require('./pipeline/dagEngine');
 const {
@@ -34,10 +45,23 @@ module.exports = {
   rules,
   DynamicRuleSynthesizer,
   ExploitPayloadGenerator,
-  // Audit Ledger
+  // Audit Ledger & Persistence
   AuditBlock,
   AuditLedger,
   sha256,
+  GENESIS_PREV_HASH,
+  AuditFilePersistence,
+  FilePersistence,
+  LedgerPersistenceError,
+  // Cryptographic Attestation
+  attestBlock,
+  verifyAttestation,
+  recordAttestationCheckpoint,
+  createAttestationCheckpoint,
+  verifyAttestationCheckpoint,
+  verifyAllAttestations,
+  LedgerAttestor,
+  ATTESTATION_EVENT_TYPE,
   // Fuzzer
   ProtocolFuzzer,
   // DAG Orchestration

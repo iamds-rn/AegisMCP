@@ -21,6 +21,7 @@ const { runProxyEndpointsTests } = require('./test-proxy-endpoints');
 const { runWebStudioTests } = require('./test-web-studio');
 const { runE2ETests } = require('./test-e2e');
 const { runMilestone2Tests } = require('./test-milestone2');
+const { runLedgerPersistenceTests } = require('./test-ledger-persistence');
 
 async function main() {
   console.log(`
@@ -47,7 +48,8 @@ async function main() {
     { name: 'MCP Proxy Gateway & Endpoints Conformance', fn: runProxyEndpointsTests },
     { name: 'Web Studio UI/UX & Client Architecture', fn: runWebStudioTests },
     { name: 'End-to-End JSON-RPC & HTTP Gateway Server', fn: runE2ETests },
-    { name: 'Milestone 2 Rate Limiter (-32003) & Execution Timeout (-32005)', fn: runMilestone2Tests }
+    { name: 'Milestone 2 Rate Limiter (-32003) & Execution Timeout (-32005)', fn: runMilestone2Tests },
+    { name: 'Milestone 3 Ledger File Persistence & HMAC-SHA256 Attestation', fn: runLedgerPersistenceTests }
   ];
 
   for (const suite of suites) {
@@ -89,6 +91,8 @@ async function main() {
       ✔ RFC 7693 / JSON-RPC 2.0 / MCP 2024-11-05 Conformance
       ✔ Sliding-Window Token Bucket Rate Limiter (-32003 AEGIS_RATE_LIMIT_EXCEEDED)
       ✔ Deterministic Execution Timeout Mapping (-32005 AEGIS_TIMEOUT)
+      ✔ Append-Only Streaming JSONL Ledger Persistence & Crash Recovery
+      ✔ HMAC-SHA256 Cryptographic Attestation Signatures & In-Chain Checkpoints
 ==============================================================
 `);
 }
