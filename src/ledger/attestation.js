@@ -24,6 +24,7 @@ const ATTESTATION_EVENT_TYPE = 'ATTESTATION_CHECKPOINT';
 
 /**
  * Extracts and validates the 64-character SHA-256 hash string from a block or hash string.
+ * Also verifies internal cryptographic integrity if block fields are present.
  * @param {Object|string} block
  * @returns {string} 64-char hex hash
  */
@@ -36,6 +37,20 @@ function extractBlockHash(block) {
   if (typeof block === 'string') {
     hash = block;
   } else if (typeof block === 'object' && typeof block.hash === 'string') {
+    // If the object is an AuditBlock or contains full block fields, verify internal payload integrity
+    if (
+      block.event !== undefined &&
+      typeof block.index === 'number' &&
+      typeof block.timestamp === 'string' &&
+      typeof block.prevHash === 'string'
+    ) {
+      const computed = AuditBlock.calculateHash(block.index, block.timestamp, block.prevHash, block.event);
+      if (computed !== block.hash) {
+        throw new Error(
+          `Cannot attest tampered block #${block.index}: internal hash mismatch (computed ${computed} != recorded ${block.hash})`
+        );
+      }
+    }
     hash = block.hash;
   }
 
@@ -63,6 +78,10 @@ function attestBlock(block, secretKey) {
     throw new TypeError('Invalid secretKey: must be a non-empty string');
   }
 
+  if (Buffer.isBuffer(secretKey) && secretKey.length === 0) {
+    throw new TypeError('Invalid secretKey: must be a non-empty Buffer');
+  }
+
   const hash = extractBlockHash(block);
   return crypto.createHmac('sha256', secretKey).update(hash, 'utf8').digest('hex');
 }
@@ -77,6 +96,14 @@ function attestBlock(block, secretKey) {
  */
 function verifyAttestation(block, secretKey, signature) {
   if (!secretKey || (typeof secretKey !== 'string' && !Buffer.isBuffer(secretKey))) {
+    return false;
+  }
+
+  if (typeof secretKey === 'string' && secretKey.length === 0) {
+    return false;
+  }
+
+  if (Buffer.isBuffer(secretKey) && secretKey.length === 0) {
     return false;
   }
 
@@ -134,10 +161,17 @@ function recordAttestationCheckpoint(ledger, secretKey, options = {}) {
   }
 
   let targetBlock = null;
+  const fullChain = typeof ledger.getFullChain === 'function' ? ledger.getFullChain() : ledger.chain;
+
   if (options.block && typeof options.block === 'object') {
-    targetBlock = options.block;
+    const candidate = options.block;
+    // Verify candidate belongs to this ledger chain
+    const found = fullChain.find(b => b.index === candidate.index && b.hash === candidate.hash);
+    if (!found) {
+      throw new Error(`Target block #${candidate.index} (${candidate.hash}) not found in ledger chain`);
+    }
+    targetBlock = found;
   } else if (typeof options.blockIndex === 'number') {
-    const fullChain = ledger.getFullChain();
     targetBlock = fullChain.find(b => b.index === options.blockIndex);
     if (!targetBlock) {
       throw new Error(`Target block #${options.blockIndex} not found in ledger`);
@@ -148,6 +182,19 @@ function recordAttestationCheckpoint(ledger, secretKey, options = {}) {
 
   if (!targetBlock || !targetBlock.hash) {
     throw new Error('Cannot attest empty ledger or block with missing hash');
+  }
+
+  // Refuse to record checkpoint for a block whose payload hash is corrupted
+  const computedHash = AuditBlock.calculateHash(
+    targetBlock.index,
+    targetBlock.timestamp,
+    targetBlock.prevHash,
+    targetBlock.event
+  );
+  if (computedHash !== targetBlock.hash) {
+    throw new Error(
+      `Cannot attest tampered block #${targetBlock.index}: payload hash mismatch`
+    );
   }
 
   const signature = attestBlock(targetBlock, secretKey);
@@ -173,21 +220,52 @@ function recordAttestationCheckpoint(ledger, secretKey, options = {}) {
  * Cryptographically verifies an ATTESTATION_CHECKPOINT block against the referenced block in the ledger.
  *
  * @param {AuditLedger} ledger - The ledger containing the chain
- * @param {AuditBlock} checkpointBlock - The block containing the ATTESTATION_CHECKPOINT event
- * @param {string|Buffer} secretKey - The operator secret key to verify against
+ * @param {AuditBlock|number} checkpointBlock - The block or block index containing the ATTESTATION_CHECKPOINT event
+ * @param {string|Buffer|Function|Object} secretKey - The operator secret key, key lookup function, or operator key map
  * @returns {{ valid: boolean, error?: string, targetBlock?: AuditBlock, checkpointBlock?: AuditBlock, operatorId?: string }}
  */
 function verifyAttestationCheckpoint(ledger, checkpointBlock, secretKey) {
-  if (!checkpointBlock || !checkpointBlock.event) {
+  if (!ledger || (typeof ledger.getFullChain !== 'function' && !Array.isArray(ledger.chain))) {
+    return { valid: false, error: 'Invalid ledger instance' };
+  }
+
+  const fullChain = typeof ledger.getFullChain === 'function' ? ledger.getFullChain() : ledger.chain;
+
+  let cpBlock = checkpointBlock;
+  if (typeof checkpointBlock === 'number') {
+    cpBlock = fullChain.find(b => b.index === checkpointBlock);
+    if (!cpBlock) {
+      return { valid: false, error: `Checkpoint block #${checkpointBlock} not found in ledger` };
+    }
+  }
+
+  if (!cpBlock || !cpBlock.event) {
     return { valid: false, error: 'Invalid checkpoint block' };
   }
 
-  const evt = checkpointBlock.event;
+  const evt = cpBlock.event;
   if (evt.type !== ATTESTATION_EVENT_TYPE) {
     return { valid: false, error: `Block event type is not ${ATTESTATION_EVENT_TYPE}` };
   }
 
-  const fullChain = ledger.getFullChain();
+  // Resolve key for operator if key map / function was provided
+  let key = secretKey;
+  if (typeof secretKey === 'function') {
+    key = secretKey(evt.operatorId, cpBlock);
+  } else if (secretKey instanceof Map) {
+    key = secretKey.get(evt.operatorId);
+  } else if (typeof secretKey === 'object' && secretKey !== null && !Buffer.isBuffer(secretKey)) {
+    key = secretKey[evt.operatorId];
+  }
+
+  if (!key) {
+    return {
+      valid: false,
+      error: `No cryptographic key provided for operator '${evt.operatorId || 'unknown'}'`,
+      operatorId: evt.operatorId
+    };
+  }
+
   const targetIndex = evt.targetBlockIndex;
   const targetBlock = fullChain.find(b => b.index === targetIndex);
 
@@ -226,7 +304,7 @@ function verifyAttestationCheckpoint(ledger, checkpointBlock, secretKey) {
     };
   }
 
-  const isSigValid = verifyAttestation(targetBlock, secretKey, evt.signature);
+  const isSigValid = verifyAttestation(targetBlock, key, evt.signature);
   if (!isSigValid) {
     return {
       valid: false,
@@ -240,7 +318,7 @@ function verifyAttestationCheckpoint(ledger, checkpointBlock, secretKey) {
   return {
     valid: true,
     targetBlock,
-    checkpointBlock,
+    checkpointBlock: cpBlock,
     operatorId: evt.operatorId,
     timestamp: evt.checkpointTimestamp
   };
@@ -250,27 +328,49 @@ function verifyAttestationCheckpoint(ledger, checkpointBlock, secretKey) {
  * Scans the entire ledger chain for all ATTESTATION_CHECKPOINT events and cryptographically verifies each one.
  *
  * @param {AuditLedger} ledger
- * @param {string|Buffer} secretKey
+ * @param {string|Buffer|Function|Object} secretKey - Secret key, operator key map, or resolver function
+ * @param {Object} [options]
+ * @param {string} [options.operatorId] - Filter verification to checkpoints matching specific operator ID
  * @returns {{ valid: boolean, checkpointCount: number, verifiedCount: number, failures: Array<Object> }}
  */
-function verifyAllAttestations(ledger, secretKey) {
-  if (!ledger || typeof ledger.getFullChain !== 'function') {
+function verifyAllAttestations(ledger, secretKey, options = {}) {
+  if (!ledger || (typeof ledger.getFullChain !== 'function' && !Array.isArray(ledger.chain))) {
     throw new TypeError('Invalid ledger: must be an instance of AuditLedger');
   }
 
-  const fullChain = ledger.getFullChain();
-  const checkpoints = fullChain.filter(b => b.event && b.event.type === ATTESTATION_EVENT_TYPE);
+  let opts = options;
+  let keyOrMap = secretKey;
+  if (
+    typeof secretKey === 'object' &&
+    secretKey !== null &&
+    !Buffer.isBuffer(secretKey) &&
+    !(secretKey instanceof Map) &&
+    (options === undefined || Object.keys(options).length === 0)
+  ) {
+    if (secretKey.operatorKeys || secretKey.secretKey || secretKey.keys) {
+      opts = secretKey;
+      keyOrMap = secretKey.operatorKeys || secretKey.secretKey || secretKey.keys;
+    }
+  }
+
+  const fullChain = typeof ledger.getFullChain === 'function' ? ledger.getFullChain() : ledger.chain;
+  let checkpoints = fullChain.filter(b => b.event && b.event.type === ATTESTATION_EVENT_TYPE);
+  if (opts && opts.operatorId) {
+    checkpoints = checkpoints.filter(b => b.event.operatorId === opts.operatorId);
+  }
+
   const failures = [];
   let verifiedCount = 0;
 
   for (const cp of checkpoints) {
-    const res = verifyAttestationCheckpoint(ledger, cp, secretKey);
+    const res = verifyAttestationCheckpoint(ledger, cp, keyOrMap);
     if (res.valid) {
       verifiedCount++;
     } else {
       failures.push({
         checkpointIndex: cp.index,
-        targetBlockIndex: cp.event.targetBlockIndex,
+        targetBlockIndex: cp.event ? cp.event.targetBlockIndex : null,
+        operatorId: cp.event ? cp.event.operatorId : null,
         error: res.error
       });
     }
@@ -294,6 +394,7 @@ class LedgerAttestor {
     }
     this.secretKey = secretKey;
     this.operatorId = options.operatorId || 'operator-root';
+    this.checkpointType = options.checkpointType || 'PERIODIC';
   }
 
   attest(block) {
@@ -307,6 +408,7 @@ class LedgerAttestor {
   checkpoint(ledger, options = {}) {
     return recordAttestationCheckpoint(ledger, this.secretKey, {
       operatorId: this.operatorId,
+      checkpointType: this.checkpointType,
       ...options
     });
   }
@@ -315,8 +417,11 @@ class LedgerAttestor {
     return verifyAttestationCheckpoint(ledger, checkpointBlock, this.secretKey);
   }
 
-  verifyAll(ledger) {
-    return verifyAllAttestations(ledger, this.secretKey);
+  verifyAll(ledger, options = {}) {
+    return verifyAllAttestations(ledger, this.secretKey, {
+      operatorId: this.operatorId,
+      ...options
+    });
   }
 }
 

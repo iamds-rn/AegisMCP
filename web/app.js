@@ -28,17 +28,19 @@ class SoundEngine {
   }
 
   init() {
-    if (!this.ctx && typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext)) {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      this.ctx = new AudioCtx();
-      this.masterGain = this.ctx.createGain();
-      const effGain = this.enabled ? this.volume : 0;
-      this.masterGain.gain.setValueAtTime(effGain, this.ctx.currentTime);
-      this.masterGain.connect(this.ctx.destination);
-    }
-    if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume().catch(() => {});
-    }
+    try {
+      if (!this.ctx && typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext)) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        this.ctx = new AudioCtx();
+        this.masterGain = this.ctx.createGain();
+        const effGain = this.enabled ? this.volume : 0;
+        this.masterGain.gain.setValueAtTime(effGain, this.ctx.currentTime);
+        this.masterGain.connect(this.ctx.destination);
+      }
+      if (this.ctx && this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {});
+      }
+    } catch (_) {}
   }
 
   setVolume(vol) {
@@ -93,81 +95,105 @@ class SoundEngine {
 
   playClick() {
     if (!this.enabled || this.volume <= 0) return;
-    this.init();
-    if (!this.ctx) return;
-    const dest = this.getDestination();
-    if (!dest) return;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(800, this.ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(400, this.ctx.currentTime + 0.04);
-    gain.gain.setValueAtTime(0.04, this.ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.04);
-    osc.connect(gain);
-    gain.connect(dest);
-    osc.start();
-    osc.stop(this.ctx.currentTime + 0.04);
+    try {
+      this.init();
+      if (!this.ctx) return;
+      const dest = this.getDestination();
+      if (!dest) return;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(800, this.ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(400, this.ctx.currentTime + 0.04);
+      gain.gain.setValueAtTime(0.04, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.04);
+      osc.connect(gain);
+      gain.connect(dest);
+      osc.start();
+      osc.stop(this.ctx.currentTime + 0.04);
+    } catch (_) {}
   }
 
   playSuccess() {
     if (!this.enabled || this.volume <= 0) return;
-    this.init();
-    if (!this.ctx) return;
-    const dest = this.getDestination();
-    if (!dest) return;
-    const now = this.ctx.currentTime;
-    [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(freq, now + i * 0.05);
-      gain.gain.setValueAtTime(0.06, now + i * 0.05);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.05 + 0.18);
-      osc.connect(gain);
-      gain.connect(dest);
-      osc.start(now + i * 0.05);
-      osc.stop(now + i * 0.05 + 0.18);
-    });
+    try {
+      this.init();
+      if (!this.ctx) return;
+      const dest = this.getDestination();
+      if (!dest) return;
+      const now = this.ctx.currentTime;
+      [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, now + i * 0.05);
+        gain.gain.setValueAtTime(0.06, now + i * 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.05 + 0.18);
+        osc.connect(gain);
+        gain.connect(dest);
+        osc.start(now + i * 0.05);
+        osc.stop(now + i * 0.05 + 0.18);
+      });
+    } catch (_) {}
   }
 
   playBlock() {
     if (!this.enabled || this.volume <= 0) return;
-    this.init();
-    if (!this.ctx) return;
-    const dest = this.getDestination();
-    if (!dest) return;
-    const now = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(180, now);
-    osc.frequency.exponentialRampToValueAtTime(80, now + 0.22);
-    gain.gain.setValueAtTime(0.09, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
-    osc.connect(gain);
-    gain.connect(dest);
-    osc.start(now);
-    osc.stop(now + 0.22);
+    try {
+      this.init();
+      if (!this.ctx) return;
+      const dest = this.getDestination();
+      if (!dest) return;
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(180, now);
+      osc.frequency.exponentialRampToValueAtTime(80, now + 0.22);
+      gain.gain.setValueAtTime(0.09, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+      osc.connect(gain);
+      gain.connect(dest);
+      osc.start(now);
+      osc.stop(now + 0.22);
+    } catch (_) {}
   }
 
   playFuzzTick() {
     if (!this.enabled || this.volume <= 0) return;
-    this.init();
-    if (!this.ctx) return;
-    const dest = this.getDestination();
-    if (!dest) return;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(1100, this.ctx.currentTime);
-    gain.gain.setValueAtTime(0.015, this.ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.018);
-    osc.connect(gain);
-    gain.connect(dest);
-    osc.start();
-    osc.stop(this.ctx.currentTime + 0.018);
+    try {
+      this.init();
+      if (!this.ctx) return;
+      const dest = this.getDestination();
+      if (!dest) return;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1100, this.ctx.currentTime);
+      gain.gain.setValueAtTime(0.015, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.018);
+      osc.connect(gain);
+      gain.connect(dest);
+      osc.start();
+      osc.stop(this.ctx.currentTime + 0.018);
+    } catch (_) {}
   }
+}
+
+// ==============================================================
+// 1b. Safe HTML String Sanitizer
+// ==============================================================
+function escapeHtml(str) {
+  if (typeof str !== 'string') {
+    if (str === null || str === undefined) return '';
+    str = String(str);
+  }
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 // ==============================================================
@@ -1054,12 +1080,26 @@ class AegisStudioApp {
     }
 
     if (typeof document !== 'undefined') {
+      const unlockAudio = () => {
+        this.sound.init();
+        document.removeEventListener('pointerdown', unlockAudio);
+        document.removeEventListener('keydown', unlockAudio);
+      };
+      document.addEventListener('pointerdown', unlockAudio, { passive: true, once: true });
+      document.addEventListener('keydown', unlockAudio, { passive: true, once: true });
+
       document.addEventListener('click', (e) => {
         if (popover && popover.style.display !== 'none') {
           const wrapper = document.getElementById('sound-control-wrapper');
           if (wrapper && !wrapper.contains(e.target)) {
             popover.style.display = 'none';
           }
+        }
+      });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && popover && popover.style.display !== 'none') {
+          popover.style.display = 'none';
         }
       });
     }
