@@ -34,6 +34,15 @@ rl.on('line', (line) => {
       return;
     }
 
+    if (method === 'ping') {
+      process.stdout.write(JSON.stringify({
+        jsonrpc: '2.0',
+        id,
+        result: {}
+      }) + '\n');
+      return;
+    }
+
     if (method === 'tools/list') {
       process.stdout.write(JSON.stringify({
         jsonrpc: '2.0',

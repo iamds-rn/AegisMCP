@@ -6,6 +6,8 @@
 
 'use strict';
 
+const fs = require('node:fs');
+const path = require('node:path');
 const pkg = require('../package.json');
 const { AegisProxyServer } = require('../src/protocol/proxy');
 const { VirtualHub } = require('../src/servers/virtualHub');
@@ -15,6 +17,7 @@ const { AuditLedger } = require('../src/ledger/auditLedger');
 const { DynamicRuleSynthesizer } = require('../src/firewall/synthesizer');
 const { ExploitPayloadGenerator } = require('../src/firewall/exploitGenerator');
 const { ClientConfigGenerator } = require('../src/protocol/configGenerator');
+const { DAGEngine } = require('../src/pipeline/dagEngine');
 
 const args = process.argv.slice(2);
 
@@ -30,6 +33,7 @@ COMMANDS:
   --serve                     Launch Web Studio & API Gateway (Default port: 3333)
   --stdio                     Run MCP stdio proxy with active zero-trust firewall protection
   --proxy <command>           Wrap & shield an external MCP server stdio command with Aegis firewall
+  --pipeline <file>           Execute a DAG pipeline definition with concurrent tier execution
   --generate-config <client>  Generate drop-in client config (claude | cursor | zed | windsurf | all)
   --synthesize <tool>         Synthesize tailored zero-trust security rules for an MCP tool
   --exploit-test <tool>       Run automated adversarial exploit audit and auto-synthesize countermeasures
@@ -43,6 +47,8 @@ OPTIONS:
   --mode <mode>               Firewall mode: ENFORCE, AUDIT_ONLY, SANITIZE (default: ENFORCE)
   --tool <name>               Target tool name (for fuzzing or rule synthesis, default: read_file)
   --upstream <cmd>            External upstream command to wrap
+  --supervise                 Enable automatic crash-backoff supervision for proxied process
+  --retries <num>             Max restart retries for supervised external server (default: 3)
 
 EXAMPLES:
   # Launch the Web Studio Cockpit
@@ -156,7 +162,16 @@ async function main() {
       console.error('❌ Error: --proxy requires an upstream command string (e.g. --proxy "npx -y @modelcontextprotocol/server-filesystem /tmp")');
       process.exit(1);
     }
-    const server = new AegisProxyServer({ upstreamCommand });
+    const supervise = args.includes('--supervise') || args.includes('--auto-restart');
+    const retriesIdx = args.indexOf('--retries');
+    const maxRetries = retriesIdx !== -1 ? parseInt(args[retriesIdx + 1], 10) : (supervise ? 3 : 0);
+    const server = new AegisProxyServer({
+      upstreamCommand,
+      upstreamOptions: {
+        autoRestart: supervise || maxRetries > 0,
+        maxRetries: maxRetries > 0 ? maxRetries : 3
+      }
+    });
     server.firewall.setMode(mode);
     await server.startStdio();
     return;
@@ -300,6 +315,62 @@ async function main() {
       process.exit(1);
     }
     return;
+  }
+
+  // 9. DAG Pipeline Execution: --pipeline <file>
+  const pipelineIdx = args.indexOf('--pipeline');
+  if (pipelineIdx !== -1) {
+    const pipelinePath = args[pipelineIdx + 1];
+    if (!pipelinePath || pipelinePath.startsWith('--')) {
+      console.error('❌ Error: --pipeline requires a path to a JSON pipeline file');
+      process.exit(1);
+    }
+    const hub = new VirtualHub();
+    try {
+      const fullPath = path.resolve(pipelinePath);
+      const pipelineDef = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+      console.log(`\n⛓️  Executing DAG Pipeline: "${pipelineDef.name || pipelineDef.id}" (${pipelineDef.nodes ? pipelineDef.nodes.length : 0} nodes)...\n`);
+
+      const ledger = new AuditLedger();
+      const firewall = new FirewallEngine({ mode });
+      const dagEngine = new DAGEngine({ firewall, ledger });
+
+      // Support external servers declared in pipeline definition
+      if (Array.isArray(pipelineDef.servers)) {
+        for (const srv of pipelineDef.servers) {
+          if (srv.name && (srv.command || srv.url)) {
+            await hub.registerExternalServer({
+              name: srv.name,
+              command: srv.command,
+              args: srv.args,
+              url: srv.url,
+              ledger,
+              autoRestart: true
+            });
+          }
+        }
+      }
+
+      const tiers = dagEngine.partitionIntoTiers(pipelineDef.nodes);
+      console.log(`📊 Topological Partitioning: ${tiers.length} concurrent execution tiers`);
+      tiers.forEach((t, i) => console.log(`   Tier ${i}: [${t.map(n => n.id).join(', ')}] (${t.length} parallel nodes)`));
+
+      const invoker = (server, tool, params) => hub.executeTool(server, tool, params);
+      const result = await dagEngine.executePipeline(pipelineDef, invoker);
+
+      console.log(`\n✅ Pipeline "${result.pipelineId}" COMPLETED in ${result.totalDurationMs}ms`);
+      console.log(`   Steps Executed: ${result.stepsExecuted}`);
+      console.log(`   Tiers Executed: ${result.tiersExecuted}`);
+      for (const t of result.tierExecutions) {
+        console.log(`   - Tier #${t.tierIndex} (${t.nodeCount} nodes): ${t.durationMs}ms | SHA-256 Hash: ${t.tierHash}`);
+      }
+      return;
+    } catch (err) {
+      console.error(`❌ Pipeline execution failed: ${err.message}`);
+      process.exit(1);
+    } finally {
+      hub.shutdownAll();
+    }
   }
 
   printHelp();

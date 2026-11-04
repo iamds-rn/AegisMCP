@@ -3,7 +3,7 @@
 > **Zero-Trust Security Firewall, Resilience Fuzzer, External Stdio Tunnel, and Visual Observability Cockpit for the Model Context Protocol (MCP)**
 
 [![Protocol: MCP 2024-11-05](https://img.shields.io/badge/Protocol-MCP%202024--11--05-00f0ff.svg)](https://modelcontextprotocol.io)
-[![Tests: All Passing](https://img.shields.io/badge/Tests-95%2B%20Assertions%20Passing%20(12%20Suites)-00ff9d.svg)](tests/)
+[![Tests: All Passing](https://img.shields.io/badge/Tests-200%2B%20Assertions%20Passing%20(20%20Suites)-00ff9d.svg)](tests/)
 [![Security: Zero--Trust](https://img.shields.io/badge/Security-Zero--Trust%20Firewall%20(SEC--001..009)-ff3366.svg)](docs/FIREWALL_RULES.md)
 [![Audit: Merkle Hash Chain](https://img.shields.io/badge/Audit-SHA--256%20Merkle%20Ledger-9d4edd.svg)](docs/ARCHITECTURE.md)
 [![Dependencies: 0 External](https://img.shields.io/badge/Dependencies-0%20External-blue.svg)](package.json)
@@ -24,18 +24,35 @@ However, **LLMs generate tool parameters probabilistically**. When an agent enco
 - Hallucinated shell commands lead to destructive unintended command execution.
 - Malicious SQL queries or prototype pollution payloads escape isolation boundaries.
 
-**AegisMCP** solves this by establishing a **Zero-Trust Security Layer** directly in the MCP protocol transport. It intercepts every JSON-RPC 2.0 tool call, inspects payloads against deterministic security invariants, records immutable Merkle audit proofs, tunnels traffic to external MCP processes, and provides an interactive visual studio to fuzz, orchestrate, and audit MCP tools.
+**AegisMCP** solves this by establishing a **Zero-Trust Security Layer** directly in the MCP protocol transport. It intercepts every JSON-RPC 2.0 tool call, inspects payloads against deterministic security invariants, records immutable Merkle audit proofs, tunnels traffic to external MCP processes, supervises process health with exponential backoff, partitions multi-node DAG workflows into concurrent topological tiers, and provides an interactive visual studio to fuzz, orchestrate, and audit MCP tools.
 
 ---
 
-## ✨ Key Pillars & Innovations (v1.2.0)
+## ✨ Key Pillars & Innovations (v1.5.0)
 
-### 1. ⚔️ Automated Weaponized Exploit Generator & Self-Healing Auto-Defense (NEW in v1.2.0)
+### 1. 🔄 Supervised External Process Management & Exponential Crash Recovery (NEW in v1.5.0)
+- **Automatic Crash-Recovery Backoff**: Supervised child processes automatically restart with jittered exponential backoff (`maxRetries`, `backoffBaseMs`, `maxBackoffMs`).
+- **Periodic Heartbeat & Liveness Probes**: Emits periodic ping/liveness probes (`heartbeatIntervalMs`) and logs tamper-evident lifecycle events (`PROCESS_CRASH`, `PROCESS_RECOVERY`, `PROCESS_HEARTBEAT_FAILED`) to the Merkle audit ledger.
+- **In-Flight Transparent Recovery**: Tool invocations arriving during crash recovery automatically await process readiness (`waitForReady`) without dropping in-flight requests.
+- **Clean Termination Enforcement**: Distinguishes intentional `stop()` shutdown from unexpected exits, suppressing spurious restarts and terminating stubborn processes.
+
+### 2. ⚡ Topological Tier Concurrency in DAG Engine (NEW in v1.5.0)
+- **Kahn's Topological Tier Partitioning**: Automatically partitions independent workflow nodes into parallel execution tiers.
+- **Concurrent Execution with `Promise.all`**: Executes all independent tool tasks in each tier in parallel, reducing execution latency from sequential $O(\sum t_i)$ to concurrent $O(\max(t_i))$.
+- **Per-Tier Cryptographic Merkle Hashing**: Computes deterministic SHA-256 hashes of all node executions within each tier and records `PIPELINE_TIER_COMPLETED` blocks in the cryptographic ledger.
+- **Fail-Fast Firewall Interception**: Halts downstream execution immediately if any step triggers a security policy violation.
+
+### 3. 🖥️ End-to-End CLI Automation & Native V8 Coverage (NEW in v1.5.0)
+- **Comprehensive CLI Tooling**: Execute workflows via `aegis-mcp --pipeline <file>`, proxy external servers with `--proxy <cmd> --supervise --retries 3`, generate drop-in client configs (`--generate-config all`), or audit tools (`--fuzz`, `--exploit-test`, `--forensics`).
+- **Zero-Dependency Native V8 Coverage**: Integrated `npm run coverage` (`node --experimental-test-coverage`) providing built-in code coverage without third-party dependencies.
+- **20 Automated Test Suites**: Comprehensive test suite (`tests/runner.js`) passing 100% of assertions in ~3.2 seconds.
+
+### 4. ⚔️ Automated Weaponized Exploit Generator & Self-Healing Auto-Defense
 - **Weaponized Exploit Library**: Evaluates tool schemas against 19 targeted exploit payloads covering 9 attack vectors (Path Traversal, Double-URL encoding, Null-byte truncation, Recon commands, Secret/JWT leaks, SSRF IPv4-mapped IPv6, Structured Prototype Pollution, Prompt Injection, and DoS buffer stress).
 - **Self-Healing Immune Loop**: When an unmitigated exploit is detected, Aegis automatically calls the `DynamicRuleSynthesizer` to author, hot-compile, and inject an immutable countermeasure rule directly into the runtime firewall engine.
 - **Exploit Studio Cockpit**: Interactive visual dashboard in the Web Studio with 1-click threat simulation, real-time exploit execution, and automated defense synthesis.
 
-### 2. 🛡️ Zero-Trust Tool Firewall & Policy Engine (SEC-001 to SEC-009)
+### 5. 🛡️ Zero-Trust Tool Firewall & Policy Engine (SEC-001 to SEC-009)
 - **Path Traversal Guard (`SEC-001`)**: Intercepts `../`, `..\`, double URL-encoding (`%252e%252e%252f`), null byte path poisoning (`\x00`), and OS root escapements (`/etc/passwd`, `~/.ssh/id_rsa`, `C:\Windows\System32`).
 - **Command Injection Guard (`SEC-002`)**: Intercepts shell metacharacters (`;`, `&&`, `||`, `|`, `` `id` ``, `$(...)`), newlines (`\n`, `\r`), recon binaries (`whoami`, `id`, `uname`, `hostname`, `env`, `sudo`), and reverse-shell redirects.
 - **Credential & Secret Leakage Guard (`SEC-003`)**: Scans parameters and responses for AWS keys (`AKIA...`), GitHub PATs (`ghp_...`), OpenAI keys (`sk-...`), Anthropic keys (`sk-ant-...`), Google API keys (`AIza...`), Stripe secret keys (`sk_live_...`), Hugging Face tokens (`hf_...`), JWTs (`eyJ...`), and private keys using **Shannon Entropy analysis**.

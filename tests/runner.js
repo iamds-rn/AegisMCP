@@ -23,11 +23,13 @@ const { runE2ETests } = require('./test-e2e');
 const { runMilestone2Tests } = require('./test-milestone2');
 const { runLedgerPersistenceTests } = require('./test-ledger-persistence');
 const { runEdgeCaseAuditTests } = require('./test-audit-edge-cases');
+const { runProcessSupervisionTests } = require('./test-process-supervision');
+const { runCliTests } = require('./test-cli');
 
 async function main() {
   console.log(`
 🛡️  ==============================================================
-    AEGIS-MCP COMPREHENSIVE AUTOMATED TEST SUITE (v1.4.0)
+    AEGIS-MCP COMPREHENSIVE AUTOMATED TEST SUITE (v1.5.0)
 ==============================================================
 `);
 
@@ -51,7 +53,9 @@ async function main() {
     { name: 'End-to-End JSON-RPC & HTTP Gateway Server', fn: runE2ETests },
     { name: 'Milestone 2 Rate Limiter (-32003) & Execution Timeout (-32005)', fn: runMilestone2Tests },
     { name: 'Milestone 3 Ledger File Persistence & HMAC-SHA256 Attestation', fn: runLedgerPersistenceTests },
-    { name: 'Deep Code Audit Edge Cases & Defect Reproductions', fn: runEdgeCaseAuditTests }
+    { name: 'Deep Code Audit Edge Cases & Defect Reproductions', fn: runEdgeCaseAuditTests },
+    { name: 'Milestone 4 Process Supervision, Concurrent DAG & Health Probes', fn: runProcessSupervisionTests },
+    { name: 'Milestone 4 CLI Automation & Command-Line Interface', fn: runCliTests }
   ];
 
   for (const suite of suites) {
@@ -96,6 +100,11 @@ async function main() {
       ✔ Append-Only Streaming JSONL Ledger Persistence & Crash Recovery
       ✔ HMAC-SHA256 Cryptographic Attestation Signatures & In-Chain Checkpoints
       ✔ Deep Code Audit Invariants: Null-Safety, Error Codes & Unhandled Rejection Immunity
+      ✔ External Process Crash-Backoff Supervision & Exponential Recovery
+      ✔ Liveness Health Checking & Periodic Heartbeat Probes
+      ✔ Topological Tier Concurrency & Parallel Execution (Promise.all)
+      ✔ Per-Tier Wall-Clock Durations & Cryptographic Ledger Hashing
+      ✔ End-to-End CLI Automation: Subprocess Orchestration, Exit Codes & DAG Flags
 ==============================================================
 `);
 }

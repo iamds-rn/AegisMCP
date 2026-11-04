@@ -44,6 +44,7 @@ class AegisProxyServer {
     this.exploitGen = new ExploitPayloadGenerator({ synthesizer: this.synthesizer });
     this.dagEngine = new DAGEngine({ firewall: this.firewall, ledger: this.ledger });
     this.upstreamCommand = options.upstreamCommand || null;
+    this.upstreamOptions = options.upstreamOptions || {};
     this.upstreamServer = null;
     this.httpServer = null;
     this.webDir = path.resolve(__dirname, '../../web');
@@ -97,12 +98,12 @@ class AegisProxyServer {
             firewall: true,
             auditLedger: true,
             fuzzer: true,
-            version: '1.4.0'
+            version: '1.5.0'
           }
         },
         serverInfo: {
           name: 'AegisMCP-Proxy',
-          version: '1.4.0'
+          version: '1.5.0'
         }
       });
     }
@@ -417,7 +418,9 @@ class AegisProxyServer {
       try {
         this.upstreamServer = await this.hub.registerExternalServer({
           name: 'upstream',
-          command: this.upstreamCommand
+          command: this.upstreamCommand,
+          ledger: this.ledger,
+          ...this.upstreamOptions
         });
         this.ledger.append('UPSTREAM_TUNNEL_INITIALIZED', {
           command: this.upstreamCommand,
@@ -489,7 +492,7 @@ class AegisProxyServer {
         // Health endpoint
         if (url.pathname === '/health') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'healthy', version: '1.4.0', uptime: process.uptime() }));
+          res.end(JSON.stringify({ status: 'healthy', version: '1.5.0', uptime: process.uptime() }));
           return;
         }
 
