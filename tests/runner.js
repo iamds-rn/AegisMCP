@@ -26,6 +26,7 @@ const { runEdgeCaseAuditTests } = require('./test-audit-edge-cases');
 const { runProcessSupervisionTests } = require('./test-process-supervision');
 const { runCliTests } = require('./test-cli');
 const { runMilestone6Tests } = require('./test-milestone6');
+const { runAdversarialM4Tests } = require('./test-m4-adversarial');
 
 async function main() {
   console.log(`
@@ -57,6 +58,7 @@ async function main() {
     { name: 'Deep Code Audit Edge Cases & Defect Reproductions', fn: runEdgeCaseAuditTests },
     { name: 'Milestone 4 Process Supervision, Concurrent DAG & Health Probes', fn: runProcessSupervisionTests },
     { name: 'Milestone 4 CLI Automation & Command-Line Interface', fn: runCliTests },
+    { name: 'Milestone 4 Empirical Adversarial Stress & Resilience Suite', fn: runAdversarialM4Tests },
     { name: 'Milestone 6 Enterprise Security Pillars (All 7 Innovations)', fn: runMilestone6Tests }
   ];
 
@@ -106,6 +108,7 @@ async function main() {
       ✔ Liveness Health Checking & Periodic Heartbeat Probes
       ✔ Topological Tier Concurrency & Parallel Execution (Promise.all)
       ✔ Per-Tier Wall-Clock Durations & Cryptographic Ledger Hashing
+      ✔ Empirical Process & Concurrency Adversarial Resilience (Burst >128KB, SIGKILL Escalation, DAG Concurrency)
       ✔ End-to-End CLI Automation: Subprocess Orchestration, Exit Codes & DAG Flags
       ✔ ABAC Permission Engine & Parameter Constraints (-32007 AEGIS_ACCESS_DENIED)
       ✔ Human-in-the-Loop Approval Gate & Pending Lifecycle (-32006 AEGIS_AWAITING_APPROVAL)
