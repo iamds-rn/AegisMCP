@@ -5,6 +5,7 @@
 
 'use strict';
 
+const path = require('node:path');
 const crypto = require('node:crypto');
 const { calculateShannonEntropy } = require('../firewall/rules');
 
@@ -85,7 +86,11 @@ class VirtualFilesystemServer {
   }
 
   async callTool(name, args = {}) {
-    const normalizePath = (p) => (p && typeof p === 'string' ? (p.startsWith('/') ? p : '/' + p) : '/');
+    const normalizePath = (p) => {
+      if (!p || typeof p !== 'string') return '/';
+      const withSlash = p.startsWith('/') ? p : '/' + p;
+      return path.posix.normalize(withSlash);
+    };
 
     switch (name) {
       case 'read_file': {
@@ -248,8 +253,11 @@ class VirtualMemoryServer {
         if (value === undefined || value === null) throw new Error('Parameter "value" is required');
         const rawTags = Array.isArray(tags) ? tags : [tags];
         const stringTags = rawTags.map(t => (t !== undefined && t !== null) ? String(t) : '');
+        const clonedValue = (typeof value === 'object' && value !== null)
+          ? JSON.parse(JSON.stringify(value))
+          : value;
         this.store.set(String(key), {
-          value,
+          value: clonedValue,
           tags: stringTags,
           updatedAt: new Date().toISOString()
         });
