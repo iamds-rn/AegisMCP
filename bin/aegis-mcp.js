@@ -6,6 +6,7 @@
 
 'use strict';
 
+const pkg = require('../package.json');
 const { AegisProxyServer } = require('../src/protocol/proxy');
 const { VirtualHub } = require('../src/servers/virtualHub');
 const { ProtocolFuzzer } = require('../src/fuzzer/fuzzer');
@@ -17,7 +18,7 @@ const args = process.argv.slice(2);
 function printHelp() {
   console.log(`
 🛡️  AegisMCP - Zero-Trust Security Firewall & Resilience Studio for MCP
-Version: 1.0.0
+Version: ${pkg.version}
 
 USAGE:
   aegis-mcp [command] [options]
