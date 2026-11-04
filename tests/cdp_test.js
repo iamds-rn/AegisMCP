@@ -513,7 +513,8 @@ async function run() {
     fs.writeFileSync('tests/screenshot_sound_controls.png', Buffer.from(ssSound.data, 'base64'));
     console.log('Saved tests/screenshot_sound_controls.png');
 
-    ws.close();
+    console.log('✅ All CDP browser tests passed successfully!');
+    process.exit(0);
   } finally {
     chromeProc.kill('SIGKILL');
     server.stop();
