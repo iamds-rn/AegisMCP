@@ -2149,15 +2149,15 @@ input:checked + .slider:before {
     position: fixed;
     top: 48px;
     bottom: 0;
-    left: -240px;
+    left: 0;
     width: 240px !important;
     z-index: 90;
     background: var(--bg-surface);
     box-shadow: 4px 0 20px rgba(0, 0, 0, 0.6);
-    transition: left 0.25s ease;
+    transform: translateX(-100%);
   }
   .aegis-sidebar.mobile-open {
-    left: 0;
+    transform: translateX(0);
   }
   .aegis-sidebar.mobile-open .nav-group-label,
   .aegis-sidebar.mobile-open .tab-text,

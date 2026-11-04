@@ -254,7 +254,7 @@ class AegisProxyServer {
         if (isAborted) return;
         isAborted = true;
         chunks.length = 0;
-        reject(err);
+        resolve(null);
       };
 
       req.on('data', onData);
@@ -760,7 +760,12 @@ class AegisProxyServer {
         let safePath = '/index.html';
         try {
           const decoded = decodeURIComponent(url.pathname);
-          const normalized = path.normalize(decoded).replace(/^(\.\.[\/\\])+/, '');
+          if (decoded.includes('..') || url.pathname.includes('..')) {
+            res.writeHead(403, { 'Content-Type': 'text/plain' });
+            res.end('Forbidden');
+            return;
+          }
+          const normalized = path.normalize(decoded);
           safePath = normalized === '/' ? '/index.html' : normalized;
         } catch {
           safePath = '/index.html';
@@ -775,7 +780,13 @@ class AegisProxyServer {
         }
 
         if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
-          filePath = path.join(this.webDir, 'index.html');
+          if (safePath === '/' || safePath === '/index.html') {
+            filePath = path.join(this.webDir, 'index.html');
+          } else {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            res.end('Not Found');
+            return;
+          }
         }
 
         if (fs.existsSync(filePath) && fs.statSync(filePath).isFile() && (filePath.startsWith(this.webDir + path.sep) || filePath === path.join(this.webDir, 'index.html'))) {

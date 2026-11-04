@@ -1,6 +1,7 @@
 'use strict';
 
 const http = require('node:http');
+const assert = require('node:assert');
 const { spawn } = require('node:child_process');
 const { AegisProxyServer } = require('../src/protocol/proxy');
 
@@ -269,7 +270,7 @@ async function run() {
       returnByValue: true
     });
     console.log('Run DAG clicked:', dagRes.result.value);
-    await sleep(1000);
+    await sleep(1800);
     const dagOutcome = await send('Runtime.evaluate', {
       expression: `
         (() => {
@@ -282,6 +283,7 @@ async function run() {
       returnByValue: true
     });
     console.log('DAG outcome:', dagOutcome.result.value);
+    assert.strictEqual(dagOutcome.result.value.statusBadge, 'COMPLETED', 'DAG pipeline must reach COMPLETED status');
 
     // Check responsive widths (1024px, 768px, 480px)
     console.log('Testing responsive viewports...');
@@ -302,21 +304,30 @@ async function run() {
     console.log('Testing mobile drawer toggle on 480px...');
     await send('Emulation.setDeviceMetricsOverride', { width: 480, height: 800, deviceScaleFactor: 1, mobile: true });
     await sleep(300);
+    await send('Runtime.evaluate', { expression: `document.getElementById('mobile-menu-btn').click();` });
+    await sleep(100);
     const drawerOpenRes = await send('Runtime.evaluate', {
       expression: `
         (() => {
-          const menuBtn = document.getElementById('mobile-menu-btn');
           const sidebar = document.querySelector('.aegis-sidebar');
-          menuBtn.click();
-          const opened = sidebar.classList.contains('mobile-open');
           const backdrop = document.getElementById('sidebar-backdrop');
-          const backdropVisible = backdrop.classList.contains('visible');
-          return { opened, backdropVisible };
+          const style = window.getComputedStyle(sidebar);
+          const rect = sidebar.getBoundingClientRect();
+          return {
+            opened: sidebar.classList.contains('mobile-open'),
+            className: sidebar.className,
+            transform: style.transform,
+            left: style.left,
+            width: style.width,
+            rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+          };
         })()
       `,
       returnByValue: true
     });
-    console.log('Drawer opened?', drawerOpenRes.result.value);
+    console.log('Drawer after click:', JSON.stringify(drawerOpenRes.result.value, null, 2));
+    assert.strictEqual(drawerOpenRes.result.value.opened, true, 'Drawer must have mobile-open class');
+    assert.strictEqual(drawerOpenRes.result.value.rect.x, 0, 'Drawer rect.x must be 0 when open');
     const ssDrawer = await send('Page.captureScreenshot', { format: 'png' });
     fs.writeFileSync('tests/screenshot_mobile_drawer.png', Buffer.from(ssDrawer.data, 'base64'));
 
@@ -333,6 +344,7 @@ async function run() {
       returnByValue: true
     });
     console.log('Drawer closed via backdrop?', drawerCloseRes.result.value);
+    assert.strictEqual(drawerCloseRes.result.value.closed, true, 'Drawer must close when backdrop clicked');
 
     ws.close();
   } finally {

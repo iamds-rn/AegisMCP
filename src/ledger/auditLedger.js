@@ -189,6 +189,9 @@ class AuditLedger {
     return {
       valid: true,
       blockCount: fullChain.length,
+      verifiedBlocks: fullChain.length,
+      brokenBlockIndex: -1,
+      brokenIndex: -1,
       activeBlocks: this.chain.length,
       archivedBlocks: this.archivedBlocks.length,
       headHash: this.getLatestBlock().hash,

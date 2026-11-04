@@ -356,6 +356,17 @@ class BrowserFirewall {
         description: 'Detects __proto__ and prototype override attempts',
         enabled: true,
         check: (params) => {
+          if (params && typeof params === 'object') {
+            const proto = Object.getPrototypeOf(params);
+            if (proto && proto !== Object.prototype && proto !== Array.prototype) {
+              return { violation: true, signature: 'Prototype Pollution: Altered Prototype', culprit: '__proto__' };
+            }
+          }
+          let raw = '';
+          try { raw = JSON.stringify(params); } catch {}
+          if (raw && (raw.includes('"__proto__"') || raw.includes('constructor.prototype'))) {
+            return { violation: true, signature: 'Prototype Pollution Vector', culprit: '__proto__' };
+          }
           const strings = extractAllStrings(params);
           for (const s of strings) {
             if (/__proto__|constructor\.prototype/i.test(s)) return { violation: true, signature: 'Prototype Pollution Vector', culprit: s };

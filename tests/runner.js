@@ -18,6 +18,7 @@ const { runFuzzerTests } = require('./test-fuzzer');
 const { runExploitGeneratorTests } = require('./test-exploit-generator');
 const { runJsonRpcTests } = require('./test-jsonrpc');
 const { runProxyEndpointsTests } = require('./test-proxy-endpoints');
+const { runWebStudioTests } = require('./test-web-studio');
 const { runE2ETests } = require('./test-e2e');
 
 async function main() {
@@ -43,6 +44,7 @@ async function main() {
     { name: 'Protocol Fuzzer & Conformance Auditor', fn: runFuzzerTests },
     { name: 'RFC 7693 & JSON-RPC 2.0 Protocol Engine', fn: runJsonRpcTests },
     { name: 'MCP Proxy Gateway & Endpoints Conformance', fn: runProxyEndpointsTests },
+    { name: 'Web Studio UI/UX & Client Architecture', fn: runWebStudioTests },
     { name: 'End-to-End JSON-RPC & HTTP Gateway Server', fn: runE2ETests }
   ];
 
