@@ -376,6 +376,7 @@ async function run() {
     assert(paletteOpen.result.value.commandsCount >= 15, 'Command palette must render commands list');
 
     // Screenshot open palette
+    await sleep(300);
     const ssPalette = await send('Page.captureScreenshot', { format: 'png' });
     fs.writeFileSync('tests/screenshot_command_palette.png', Buffer.from(ssPalette.data, 'base64'));
     console.log('Saved tests/screenshot_command_palette.png');
