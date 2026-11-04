@@ -61,12 +61,12 @@ function getJson(url) {
 async function runE2ETests() {
   console.log('🧪 Testing End-to-End Protocol & HTTP Gateway Server...');
 
-  const testPort = 3399;
-  const proxy = new AegisProxyServer({ port: testPort });
-  await proxy.startHttp(testPort);
+  const proxy = new AegisProxyServer({ port: 0 });
+  const server = await proxy.startHttp(0);
+  const actualPort = server.address().port;
 
   try {
-    const baseUrl = `http://localhost:${testPort}`;
+    const baseUrl = `http://localhost:${actualPort}`;
 
     // 1. Health check
     const health = await getJson(`${baseUrl}/health`);
