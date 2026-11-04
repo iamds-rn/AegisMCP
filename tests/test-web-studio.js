@@ -16,7 +16,8 @@ const {
   calculateShannonEntropy,
   extractAllStrings,
   BrowserFirewall,
-  BrowserLedger
+  BrowserLedger,
+  escapeHtml
 } = require('../web/app');
 
 function fetchHttp(url) {
@@ -319,7 +320,15 @@ async function runWebStudioTests() {
   assert(cssContent.includes('.sound-popover'), 'CSS must define .sound-popover');
   assert(cssContent.includes('.sound-slider'), 'CSS must define .sound-slider');
 
-  console.log('✅ Web Studio UI/UX & Client Architecture: All 9 test groups passed!');
+  // 10. escapeHtml Sanitization & XSS Defense Invariants
+  assert.strictEqual(typeof escapeHtml, 'function', 'escapeHtml must be exported');
+  assert.strictEqual(escapeHtml('<script>alert("xss")</script>'), '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;');
+  assert.strictEqual(escapeHtml('Hello & Welcome <world>'), 'Hello &amp; Welcome &lt;world&gt;');
+  assert.strictEqual(escapeHtml(null), '');
+  assert.strictEqual(escapeHtml(undefined), '');
+  assert.strictEqual(escapeHtml(123), '123');
+
+  console.log('✅ Web Studio UI/UX & Client Architecture: All 10 test groups passed!');
 }
 
 module.exports = { runWebStudioTests };

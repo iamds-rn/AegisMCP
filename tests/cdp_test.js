@@ -354,12 +354,12 @@ async function run() {
     // Test Feature 1: Command Palette (Cmd+K / Ctrl+K)
     // ==============================================================
     console.log('Testing Command Palette modal & navigation...');
-    const paletteOpen = await send('Runtime.evaluate', {
+
+    // 1. Test opening via global Cmd+K / Ctrl+K keyboard shortcut
+    const shortcutOpen = await send('Runtime.evaluate', {
       expression: `
         (() => {
-          const btn = document.getElementById('palette-trigger-btn');
-          if (!btn) return { error: 'NO PALETTE TRIGGER' };
-          btn.click();
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }));
           const backdrop = document.getElementById('command-palette-backdrop');
           const input = document.getElementById('palette-search-input');
           return {
@@ -371,9 +371,30 @@ async function run() {
       `,
       returnByValue: true
     });
-    console.log('Palette open state:', paletteOpen.result.value);
-    assert.strictEqual(paletteOpen.result.value.open, true, 'Command palette modal must open on trigger click');
-    assert(paletteOpen.result.value.commandsCount >= 15, 'Command palette must render commands list');
+    console.log('Palette shortcut open state:', shortcutOpen.result.value);
+    assert.strictEqual(shortcutOpen.result.value.open, true, 'Command palette must open via Cmd+K shortcut');
+    assert(shortcutOpen.result.value.commandsCount >= 20, 'Command palette must render >= 20 commands');
+
+    // 2. Test XSS Immunity in Palette Search Input
+    const xssTest = await send('Runtime.evaluate', {
+      expression: `
+        (() => {
+          const input = document.getElementById('palette-search-input');
+          input.value = '<img src="x" onerror="window.__xssPwned=1">';
+          input.dispatchEvent(new Event('input'));
+          const emptyDiv = document.querySelector('.palette-empty');
+          return {
+            xssPwned: !!window.__xssPwned,
+            htmlContent: emptyDiv ? emptyDiv.innerHTML : '',
+            escaped: emptyDiv ? emptyDiv.innerHTML.includes('&lt;img') : false
+          };
+        })()
+      `,
+      returnByValue: true
+    });
+    console.log('Palette XSS immunity check:', xssTest.result.value);
+    assert.strictEqual(xssTest.result.value.xssPwned, false, 'XSS must not execute from search input');
+    assert.strictEqual(xssTest.result.value.escaped, true, 'HTML tags in search input must be escaped');
 
     // Screenshot open palette
     await sleep(300);
@@ -381,18 +402,18 @@ async function run() {
     fs.writeFileSync('tests/screenshot_command_palette.png', Buffer.from(ssPalette.data, 'base64'));
     console.log('Saved tests/screenshot_command_palette.png');
 
-    // Filter in palette and navigate
+    // 3. Test Keyboard Navigation (ArrowDown, ArrowUp, Enter) to switch tab
     const paletteNav = await send('Runtime.evaluate', {
       expression: `
         (() => {
           const input = document.getElementById('palette-search-input');
           input.value = 'fuzzer';
           input.dispatchEvent(new Event('input'));
-          const filteredItems = document.querySelectorAll('.palette-item');
-          const firstItem = filteredItems[0];
-          if (firstItem) {
-            firstItem.click();
-          }
+
+          // Press ArrowDown to navigate to first result, then Enter
+          input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+          input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
           const backdrop = document.getElementById('command-palette-backdrop');
           return {
             closed: backdrop.style.display === 'none',
@@ -402,9 +423,32 @@ async function run() {
       `,
       returnByValue: true
     });
-    console.log('Palette navigation result:', paletteNav.result.value);
-    assert.strictEqual(paletteNav.result.value.closed, true, 'Palette must close after item selection');
-    assert.strictEqual(paletteNav.result.value.activeTab, 'tab-fuzzer', 'Tab must switch to selected command target');
+    console.log('Palette keyboard navigation result:', paletteNav.result.value);
+    assert.strictEqual(paletteNav.result.value.closed, true, 'Palette must close after Enter key selection');
+    assert.strictEqual(paletteNav.result.value.activeTab, 'tab-fuzzer', 'Tab must switch to fuzzer target via keyboard');
+
+    // 4. Test Firewall Mode switching from Command Palette
+    const modeSwitchRes = await send('Runtime.evaluate', {
+      expression: `
+        (() => {
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }));
+          const input = document.getElementById('palette-search-input');
+          input.value = 'Set Firewall Mode: AUDIT_ONLY';
+          input.dispatchEvent(new Event('input'));
+          input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+          const checkedRadio = document.querySelector('input[name="firewall-mode"]:checked');
+          const badge = document.getElementById('current-mode-badge');
+          return {
+            modeValue: checkedRadio ? checkedRadio.value : null,
+            badgeText: badge ? badge.textContent.trim() : null
+          };
+        })()
+      `,
+      returnByValue: true
+    });
+    console.log('Palette mode switch result:', modeSwitchRes.result.value);
+    assert.strictEqual(modeSwitchRes.result.value.modeValue, 'AUDIT_ONLY', 'Palette must switch mode to AUDIT_ONLY');
 
     // ==============================================================
     // Test Feature 2: Interactive Threat Log Filter Tags
@@ -413,7 +457,7 @@ async function run() {
     await send('Runtime.evaluate', { expression: `document.querySelector('.nav-tab[data-tab="tab-dashboard"]')?.click();` });
     await sleep(200);
 
-    // Trigger a scenario to generate threat and audit events
+    // Trigger scenario to generate initial threat events
     await send('Runtime.evaluate', { expression: `document.getElementById('scenario-injection-btn')?.click();` });
     await sleep(200);
 
@@ -432,24 +476,29 @@ async function run() {
 
           // Click Blocked Threats filter
           tagBlock.click();
-          const itemsAfterBlock = Array.from(document.querySelectorAll('#event-stream-container .event-item'));
-          const visibleAfterBlock = itemsAfterBlock.filter(el => !el.classList.contains('filter-hidden')).length;
+          const items = Array.from(document.querySelectorAll('#event-stream-container .event-item'));
+          const visibleAfterBlock = items.filter(el => !el.classList.contains('filter-hidden')).length;
 
-          // Click SEC-001 rule chip
+          // Now click Clean, then click SEC-001 chip (verifies no cross-filter conflict)
+          tagClean.click();
           chipSec1.click();
-          const visibleAfterSec1 = itemsAfterBlock.filter(el => !el.classList.contains('filter-hidden')).length;
+          const visibleAfterSec1FromClean = items.filter(el => !el.classList.contains('filter-hidden')).length;
+
+          // Untoggle SEC-001 chip
+          chipSec1.click();
+          const visibleAfterUntoggle = items.filter(el => !el.classList.contains('filter-hidden')).length;
 
           // Click Reset
           resetBtn.click();
-          const visibleAfterReset = itemsAfterBlock.filter(el => !el.classList.contains('filter-hidden')).length;
+          const visibleAfterReset = items.filter(el => !el.classList.contains('filter-hidden')).length;
 
           return {
             countAll,
             countBlock,
             visibleAfterBlock,
-            visibleAfterSec1,
+            visibleAfterSec1FromClean,
+            visibleAfterUntoggle,
             visibleAfterReset,
-            pillBlockActive: tagBlock.classList.contains('active'),
             allPillActiveAfterReset: tagAll.classList.contains('active')
           };
         })()
@@ -458,7 +507,37 @@ async function run() {
     });
     console.log('Threat filter test result:', filterTestResult.result.value);
     assert(filterTestResult.result.value.countAll > 0, 'Must have events in stream');
+    assert(filterTestResult.result.value.visibleAfterSec1FromClean > 0, 'SEC-001 chip must show events even after Clean pill clicked');
     assert.strictEqual(filterTestResult.result.value.allPillActiveAfterReset, true, 'All pill must be active after reset');
+
+    // Test Empty State Ghost Message Clearing on New Matching Event
+    const emptyStateTest = await send('Runtime.evaluate', {
+      expression: `
+        (() => {
+          const chipSec9 = document.querySelector('.filter-chip[data-rule="SEC-009"]');
+          chipSec9.click();
+          const emptyMsgBefore = document.getElementById('event-stream-empty-msg');
+          const emptyVisibleBefore = emptyMsgBefore && emptyMsgBefore.style.display !== 'none';
+
+          // Now log an event matching SEC-009
+          window.aegis.logEvent('FIREWALL_BLOCK', 'Blocked /app/.env exfiltration', 'block', { ruleId: 'SEC-009' });
+          const emptyMsgAfter = document.getElementById('event-stream-empty-msg');
+          const emptyVisibleAfter = emptyMsgAfter && emptyMsgAfter.style.display !== 'none';
+
+          // Reset filter
+          document.getElementById('filter-pill-reset').click();
+
+          return {
+            emptyVisibleBefore,
+            emptyVisibleAfter
+          };
+        })()
+      `,
+      returnByValue: true
+    });
+    console.log('Empty state clearing check:', emptyStateTest.result.value);
+    assert.strictEqual(emptyStateTest.result.value.emptyVisibleBefore, true, 'Empty message must be visible before matching event');
+    assert.strictEqual(emptyStateTest.result.value.emptyVisibleAfter, false, 'Empty message must automatically disappear when matching event arrives');
 
     const ssFilter = await send('Page.captureScreenshot', { format: 'png' });
     fs.writeFileSync('tests/screenshot_threat_filters.png', Buffer.from(ssFilter.data, 'base64'));
@@ -475,6 +554,7 @@ async function run() {
           const popover = document.getElementById('sound-popover');
           const slider = document.getElementById('sound-volume-slider');
           const badge = document.getElementById('sound-vol-badge');
+          const muteIconBtn = document.getElementById('sound-mute-icon-btn');
           const preset25 = document.querySelector('.sound-preset-chip[data-volume="25"]');
           const testBtn = document.getElementById('sound-test-btn');
 
@@ -491,13 +571,28 @@ async function run() {
           preset25.click();
           const badgeAt25 = badge.textContent.trim();
 
+          // Click mute icon toggle
+          muteIconBtn.click();
+          const badgeMuted = badge.textContent.trim();
+
+          // Click unmute
+          muteIconBtn.click();
+          const badgeUnmuted = badge.textContent.trim();
+
           // Click test chime
           testBtn.click();
+
+          // Test closing popover via Escape key
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          const popoverClosedViaEscape = popover.style.display === 'none';
 
           return {
             popoverVisible,
             badgeAt75,
             badgeAt25,
+            badgeMuted,
+            badgeUnmuted,
+            popoverClosedViaEscape,
             finalVolume: window.aegis ? window.aegis.sound.volume : null
           };
         })()
@@ -508,6 +603,9 @@ async function run() {
     assert.strictEqual(soundTestResult.result.value.popoverVisible, true, 'Sound popover must open on button click');
     assert.strictEqual(soundTestResult.result.value.badgeAt75, '75%', 'Volume badge must reflect slider input');
     assert.strictEqual(soundTestResult.result.value.badgeAt25, '25%', 'Volume badge must reflect preset chip click');
+    assert.strictEqual(soundTestResult.result.value.badgeMuted, 'MUTE', 'Volume badge must show MUTE when muted');
+    assert.strictEqual(soundTestResult.result.value.badgeUnmuted, '25%', 'Volume badge must restore to 25% when unmuted');
+    assert.strictEqual(soundTestResult.result.value.popoverClosedViaEscape, true, 'Sound popover must close on Escape key');
     assert.strictEqual(soundTestResult.result.value.finalVolume, 0.25, 'SoundEngine volume must be 0.25');
 
     const ssSound = await send('Page.captureScreenshot', { format: 'png' });

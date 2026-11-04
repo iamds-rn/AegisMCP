@@ -1269,15 +1269,100 @@ class AegisStudioApp {
       {
         id: 'act-toggle-firewall-mode',
         category: 'SECURITY ACTIONS',
-        title: 'Toggle Firewall Mode (ENFORCE ↔ AUDIT)',
-        desc: 'Switch between active zero-trust blocking and non-blocking audit telemetry',
-        badge: 'MODE',
+        title: 'Cycle Firewall Policy Mode',
+        desc: 'Step policy mode sequentially across Enforce, Sanitize, and Audit',
+        badge: 'CYCLE',
         action: () => {
-          const select = document.getElementById('firewall-mode-select');
-          if (select) {
-            select.value = select.value === 'ENFORCE' ? 'AUDIT' : 'ENFORCE';
-            select.dispatchEvent(new Event('change'));
+          const currentRadio = document.querySelector('input[name="firewall-mode"]:checked');
+          const current = currentRadio ? currentRadio.value : (this.firewall ? this.firewall.mode : 'ENFORCE');
+          const modes = ['ENFORCE', 'SANITIZE', 'AUDIT_ONLY'];
+          const next = modes[(modes.indexOf(current) + 1) % modes.length];
+          const radio = document.querySelector(`input[name="firewall-mode"][value="${next}"]`);
+          if (radio) {
+            radio.checked = true;
+            radio.dispatchEvent(new Event('change'));
+          } else if (this.firewall) {
+            this.firewall.mode = next;
+            const modeBadge = document.getElementById('current-mode-badge');
+            if (modeBadge) modeBadge.textContent = `MODE: ${next}`;
+            this.logEvent('POLICY_CHANGE', `Firewall policy mode changed to ${next}`, 'audit');
           }
+        }
+      },
+      {
+        id: 'act-mode-enforce',
+        category: 'SECURITY ACTIONS',
+        title: 'Set Firewall Mode: ENFORCE',
+        desc: 'Block and isolate zero-trust violations with -32001 error code',
+        badge: 'ENFORCE',
+        action: () => {
+          const radio = document.querySelector('input[name="firewall-mode"][value="ENFORCE"]');
+          if (radio) {
+            radio.checked = true;
+            radio.dispatchEvent(new Event('change'));
+          }
+        }
+      },
+      {
+        id: 'act-mode-audit',
+        category: 'SECURITY ACTIONS',
+        title: 'Set Firewall Mode: AUDIT_ONLY',
+        desc: 'Permit frames through while recording security alerts into ledger',
+        badge: 'AUDIT',
+        action: () => {
+          const radio = document.querySelector('input[name="firewall-mode"][value="AUDIT_ONLY"]');
+          if (radio) {
+            radio.checked = true;
+            radio.dispatchEvent(new Event('change'));
+          }
+        }
+      },
+      {
+        id: 'act-synth-tool',
+        category: 'SECURITY ACTIONS',
+        title: 'Synthesize Tailored Rules for Tool',
+        desc: 'Generate zero-trust parameter boundaries for selected MCP tool',
+        badge: '⚡ SYNTH',
+        action: () => {
+          this.switchTab('tab-synthesizer');
+          const btn = document.getElementById('synth-tool-btn');
+          if (btn) btn.click();
+        }
+      },
+      {
+        id: 'act-reset-rules',
+        category: 'SECURITY ACTIONS',
+        title: 'Restore Firewall Default Policies',
+        desc: 'Re-enable all baseline zero-trust rules SEC-001 through SEC-009',
+        badge: 'RESTORE',
+        action: () => {
+          this.switchTab('tab-firewall');
+          const btn = document.getElementById('reset-rules-btn');
+          if (btn) btn.click();
+        }
+      },
+      {
+        id: 'act-filter-all',
+        category: 'SECURITY ACTIONS',
+        title: 'Filter Logs: Show All Events',
+        desc: 'Display entire real-time audit stream without filters',
+        badge: 'ALL',
+        action: () => {
+          this.switchTab('tab-dashboard');
+          const btn = document.getElementById('filter-pill-all');
+          if (btn) btn.click();
+        }
+      },
+      {
+        id: 'act-filter-threats',
+        category: 'SECURITY ACTIONS',
+        title: 'Filter Logs: Show Blocked Threats Only',
+        desc: 'Isolate intercepted attacks and firewall rule violations',
+        badge: 'THREATS',
+        action: () => {
+          this.switchTab('tab-dashboard');
+          const btn = document.getElementById('filter-pill-block');
+          if (btn) btn.click();
         }
       },
       {
@@ -1350,6 +1435,16 @@ class AegisStudioApp {
       }
     ];
 
+    const updatePaletteActiveItem = () => {
+      const items = resultsContainer.querySelectorAll('.palette-item');
+      items.forEach((el, i) => {
+        el.classList.toggle('active-item', i === this.paletteActiveIndex);
+        if (i === this.paletteActiveIndex) {
+          el.scrollIntoView({ block: 'nearest' });
+        }
+      });
+    };
+
     const renderPalette = (filterText = '') => {
       if (!resultsContainer) return;
       resultsContainer.innerHTML = '';
@@ -1366,7 +1461,7 @@ class AegisStudioApp {
       this.paletteFilteredCommands = filtered;
 
       if (filtered.length === 0) {
-        resultsContainer.innerHTML = `<div class="palette-empty">No commands match "<strong>${filterText}</strong>"</div>`;
+        resultsContainer.innerHTML = `<div class="palette-empty">No commands match "<strong>${escapeHtml(filterText)}</strong>"</div>`;
         if (summary) summary.textContent = '0 commands found';
         return;
       }
@@ -1400,18 +1495,16 @@ class AegisStudioApp {
               </svg>
             </div>
             <div class="palette-item-details">
-              <span class="palette-item-title">${cmd.title}</span>
-              <span class="palette-item-desc">${cmd.desc}</span>
+              <span class="palette-item-title">${escapeHtml(cmd.title)}</span>
+              <span class="palette-item-desc">${escapeHtml(cmd.desc)}</span>
             </div>
           </div>
-          <span class="palette-item-badge">${cmd.badge}</span>
+          <span class="palette-item-badge">${escapeHtml(cmd.badge)}</span>
         `;
 
         itemEl.addEventListener('mouseenter', () => {
           this.paletteActiveIndex = idx;
-          resultsContainer.querySelectorAll('.palette-item').forEach((el, i) => {
-            el.classList.toggle('active-item', i === idx);
-          });
+          updatePaletteActiveItem();
         });
 
         itemEl.addEventListener('click', () => {
@@ -1477,29 +1570,29 @@ class AegisStudioApp {
 
       input.addEventListener('keydown', (e) => {
         const filtered = this.paletteFilteredCommands || [];
-        if (e.key === 'ArrowDown') {
+        if (e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey)) {
           e.preventDefault();
           if (filtered.length > 0) {
             this.paletteActiveIndex = (this.paletteActiveIndex + 1) % filtered.length;
-            const items = resultsContainer.querySelectorAll('.palette-item');
-            items.forEach((el, i) => {
-              el.classList.toggle('active-item', i === this.paletteActiveIndex);
-              if (i === this.paletteActiveIndex) {
-                el.scrollIntoView({ block: 'nearest' });
-              }
-            });
+            updatePaletteActiveItem();
           }
-        } else if (e.key === 'ArrowUp') {
+        } else if (e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey)) {
           e.preventDefault();
           if (filtered.length > 0) {
             this.paletteActiveIndex = (this.paletteActiveIndex - 1 + filtered.length) % filtered.length;
-            const items = resultsContainer.querySelectorAll('.palette-item');
-            items.forEach((el, i) => {
-              el.classList.toggle('active-item', i === this.paletteActiveIndex);
-              if (i === this.paletteActiveIndex) {
-                el.scrollIntoView({ block: 'nearest' });
-              }
-            });
+            updatePaletteActiveItem();
+          }
+        } else if (e.key === 'Home') {
+          if (filtered.length > 0) {
+            e.preventDefault();
+            this.paletteActiveIndex = 0;
+            updatePaletteActiveItem();
+          }
+        } else if (e.key === 'End') {
+          if (filtered.length > 0) {
+            e.preventDefault();
+            this.paletteActiveIndex = filtered.length - 1;
+            updatePaletteActiveItem();
           }
         } else if (e.key === 'Enter') {
           e.preventDefault();
@@ -1507,16 +1600,19 @@ class AegisStudioApp {
             this.executePaletteCommand(filtered[this.paletteActiveIndex]);
           }
         } else if (e.key === 'Escape') {
+          e.preventDefault();
           closePalette();
         }
       });
     }
 
-    // Global keyboard listener for Cmd+K / Ctrl+K
+    // Global keyboard listener for Cmd+K / Ctrl+K with capture phase
     if (typeof window !== 'undefined') {
       window.addEventListener('keydown', (e) => {
-        if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        const isK = e.key === 'k' || e.key === 'K' || e.code === 'KeyK';
+        if ((e.metaKey || e.ctrlKey) && isK) {
           e.preventDefault();
+          e.stopPropagation();
           if (backdrop && backdrop.style.display !== 'none') {
             closePalette();
           } else {
@@ -1524,10 +1620,16 @@ class AegisStudioApp {
           }
         } else if (e.key === 'Escape') {
           if (backdrop && backdrop.style.display !== 'none') {
+            e.preventDefault();
             closePalette();
           }
         }
-      });
+      }, true);
+
+      if (typeof navigator !== 'undefined' && navigator.platform && !/Mac|iPhone|iPad|iPod/.test(navigator.platform)) {
+        const kbd = document.querySelector('.palette-btn-kbd');
+        if (kbd) kbd.textContent = 'Ctrl+K';
+      }
     }
   }
 
@@ -1576,6 +1678,7 @@ class AegisStudioApp {
       chip.addEventListener('click', () => {
         const r = chip.getAttribute('data-rule');
         this.threatFilter.rule = this.threatFilter.rule === r ? null : r;
+        this.threatFilter.type = 'all';
         this.sound.playClick();
         updateFilterUI();
       });
@@ -1598,6 +1701,7 @@ class AegisStudioApp {
         if (chip) {
           const ruleCode = chip.textContent.trim();
           this.threatFilter.rule = this.threatFilter.rule === ruleCode ? null : ruleCode;
+          this.threatFilter.type = 'all';
           this.sound.playClick();
           updateFilterUI();
         }
@@ -1629,7 +1733,7 @@ class AegisStudioApp {
       let matchRule = true;
       if (this.threatFilter.rule) {
         const targetRule = this.threatFilter.rule.toUpperCase();
-        matchRule = rule === targetRule || text.includes(targetRule.toLowerCase());
+        matchRule = rule.toUpperCase() === targetRule || text.includes(targetRule.toLowerCase());
       }
 
       const matches = matchType && matchRule;
@@ -1639,11 +1743,12 @@ class AegisStudioApp {
 
     let emptyEl = document.getElementById('event-stream-empty-msg');
     if (visibleCount === 0 && items.length > 0) {
+      const filterLabel = escapeHtml(this.threatFilter.rule || this.threatFilter.type);
       if (!emptyEl) {
         emptyEl = document.createElement('div');
         emptyEl.id = 'event-stream-empty-msg';
         emptyEl.className = 'event-stream-empty';
-        emptyEl.innerHTML = `No events match active filter: <strong>${this.threatFilter.rule || this.threatFilter.type}</strong>. <a href="#" style="color: var(--accent-primary); margin-left: 6px; text-decoration: underline;" id="reset-filter-link">Reset</a>`;
+        emptyEl.innerHTML = `No events match active filter: <strong>${filterLabel}</strong>. <a href="#" style="color: var(--accent-primary); margin-left: 6px; text-decoration: underline;" id="reset-filter-link">Reset Filter</a>`;
         stream.appendChild(emptyEl);
         emptyEl.querySelector('#reset-filter-link')?.addEventListener('click', (e) => {
           e.preventDefault();
@@ -1652,7 +1757,12 @@ class AegisStudioApp {
         });
       } else {
         emptyEl.style.display = 'block';
-        emptyEl.innerHTML = `No events match active filter: <strong>${this.threatFilter.rule || this.threatFilter.type}</strong>. <a href="#" style="color: var(--accent-primary); margin-left: 6px; text-decoration: underline;" id="reset-filter-link">Reset</a>`;
+        emptyEl.innerHTML = `No events match active filter: <strong>${filterLabel}</strong>. <a href="#" style="color: var(--accent-primary); margin-left: 6px; text-decoration: underline;" id="reset-filter-link">Reset Filter</a>`;
+        emptyEl.querySelector('#reset-filter-link')?.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.threatFilter = { type: 'all', rule: null };
+          if (this.updateFilterUI) this.updateFilterUI();
+        });
       }
     } else if (emptyEl) {
       emptyEl.style.display = 'none';
@@ -3080,13 +3190,13 @@ Grade: A+
       item.innerHTML = `
         <div class="event-top">
           <div style="display: flex; align-items: center; gap: 4px;">
-            <span class="event-type-badge">${type}</span>
-            ${ruleId ? `<span class="event-rule-pill" data-rule="${ruleId}" title="Click to filter by ${ruleId}">${ruleId}</span>` : ''}
+            <span class="event-type-badge">${escapeHtml(type)}</span>
+            ${ruleId ? `<span class="event-rule-pill" data-rule="${escapeHtml(ruleId)}" title="Click to filter by ${escapeHtml(ruleId)}">${escapeHtml(ruleId)}</span>` : ''}
           </div>
-          <span class="event-time">${time}</span>
+          <span class="event-time">${escapeHtml(time)}</span>
         </div>
-        <div class="event-desc">${desc}</div>
-        ${data ? `<div class="event-detail">${JSON.stringify(data)}</div>` : ''}
+        <div class="event-desc">${escapeHtml(desc)}</div>
+        ${data ? `<div class="event-detail">${escapeHtml(JSON.stringify(data))}</div>` : ''}
       `;
 
       // Allow clicking rule pill inside card to filter
@@ -3096,33 +3206,22 @@ Grade: A+
           e.stopPropagation();
           const r = pill.getAttribute('data-rule');
           this.threatFilter.rule = this.threatFilter.rule === r ? null : r;
+          this.threatFilter.type = 'all';
           this.sound.playClick();
           if (this.updateFilterUI) this.updateFilterUI();
         });
       }
 
-      // Hide if not matching active filter
-      if (this.threatFilter) {
-        let matchType = true;
-        if (this.threatFilter.type === 'block') {
-          matchType = kind === 'block' || type.includes('BLOCK') || type.includes('ALERT') || type.includes('TAMPER');
-        } else if (this.threatFilter.type === 'success') {
-          matchType = kind === 'success';
-        } else if (this.threatFilter.type === 'audit') {
-          matchType = kind === 'audit';
-        }
+      stream.prepend(item);
 
-        let matchRule = true;
-        if (this.threatFilter.rule) {
-          matchRule = ruleId === this.threatFilter.rule;
-        }
-
-        if (!matchType || !matchRule) {
-          item.classList.add('filter-hidden');
-        }
+      // Prune oldest items if buffer exceeds 250 items to keep DOM performant
+      const allItems = stream.querySelectorAll('.event-item');
+      if (allItems.length > 250) {
+        allItems[allItems.length - 1].remove();
       }
 
-      stream.prepend(item);
+      // Re-apply filter so item gets proper visibility and empty message is updated
+      this.applyStreamFilter();
       if (this.updateFilterCounts) this.updateFilterCounts();
     }
 
@@ -3156,6 +3255,7 @@ if (typeof module !== 'undefined' && module.exports) {
     BrowserFirewall,
     BrowserLedger,
     BrowserVirtualHub,
-    AegisStudioApp
+    AegisStudioApp,
+    escapeHtml
   };
 }

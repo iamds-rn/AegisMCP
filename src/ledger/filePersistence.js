@@ -49,7 +49,7 @@ class AuditFilePersistence {
 
     this.filePath = path.resolve(filePath);
     this.atomicSync = options.atomicSync !== false;
-    this.fsync = options.fsync !== false;
+    this.fsync = options.fsync !== undefined ? options.fsync === true : this.atomicSync;
     this.buffered = options.buffered === true;
     this.bufferSize = typeof options.bufferSize === 'number' && options.bufferSize > 0
       ? options.bufferSize
@@ -85,14 +85,20 @@ class AuditFilePersistence {
 
   /**
    * Deserializes and validates schema of a single JSON line into an AuditBlock instance.
+   * Strips UTF-8 BOM if present on initial lines.
    * @param {string} line
    * @param {number} [lineNum=1]
    * @returns {AuditBlock}
    */
   deserializeBlock(line, lineNum = 1) {
+    let cleanLine = line;
+    if (typeof cleanLine === 'string' && cleanLine.charCodeAt(0) === 0xFEFF) {
+      cleanLine = cleanLine.slice(1);
+    }
+
     let parsed;
     try {
-      parsed = JSON.parse(line);
+      parsed = JSON.parse(cleanLine);
     } catch (err) {
       throw new LedgerPersistenceError(
         `Corrupted JSON record at line ${lineNum}: ${err.message}`,
@@ -125,11 +131,39 @@ class AuditFilePersistence {
 
   /**
    * Appends an AuditBlock to the persistent JSONL file.
+   * Validates internal payload integrity prior to writing to prevent storage poisoning.
    * In atomic mode, performs immediate sync (write + fsync) to prevent partial write corruption.
    * In buffered mode, accumulates in memory until bufferSize or explicit flush().
    * @param {AuditBlock} block
    */
   appendBlock(block) {
+    if (!block || typeof block !== 'object') {
+      throw new LedgerPersistenceError('Cannot append invalid block: expected object', {
+        code: 'ERR_INVALID_BLOCK'
+      });
+    }
+
+    // Verify block hash integrity before persisting to disk
+    if (
+      typeof block.index === 'number' &&
+      typeof block.timestamp === 'string' &&
+      typeof block.prevHash === 'string' &&
+      block.event !== undefined
+    ) {
+      const computedHash = AuditBlock.calculateHash(block.index, block.timestamp, block.prevHash, block.event);
+      if (computedHash !== block.hash) {
+        throw new LedgerPersistenceError(
+          `Refusing to persist corrupted block #${block.index}: payload hash mismatch`,
+          {
+            brokenIndex: block.index,
+            expectedHash: computedHash,
+            actualHash: block.hash,
+            code: 'ERR_HASH_MISMATCH'
+          }
+        );
+      }
+    }
+
     const line = this.serializeBlock(block) + '\n';
 
     if (this.buffered) {
@@ -145,30 +179,49 @@ class AuditFilePersistence {
 
   /**
    * Internal helper for atomic write + optional fsync.
+   * Ensures previous line ends with newline delimiter before appending.
    * @private
    */
   _writeSync(data) {
+    let payload = data;
+    if (fs.existsSync(this.filePath)) {
+      const stat = fs.statSync(this.filePath);
+      if (stat.size > 0) {
+        const fdRead = fs.openSync(this.filePath, 'r');
+        try {
+          const buf = Buffer.alloc(1);
+          fs.readSync(fdRead, buf, 0, 1, stat.size - 1);
+          if (buf[0] !== 0x0A) {
+            payload = '\n' + payload;
+          }
+        } finally {
+          fs.closeSync(fdRead);
+        }
+      }
+    }
+
     if (this.fsync) {
       const fd = fs.openSync(this.filePath, 'a');
       try {
-        fs.writeSync(fd, data, null, 'utf8');
+        fs.writeSync(fd, payload, null, 'utf8');
         fs.fsyncSync(fd);
       } finally {
         fs.closeSync(fd);
       }
     } else {
-      fs.appendFileSync(this.filePath, data, 'utf8');
+      fs.appendFileSync(this.filePath, payload, 'utf8');
     }
   }
 
   /**
    * Flushes all buffered writes to disk with fsync barrier.
+   * Preserves buffer if write encounters I/O error to avoid data loss.
    */
   flush() {
     if (this.writeBuffer.length === 0) return;
     const data = this.writeBuffer.join('');
-    this.writeBuffer = [];
     this._writeSync(data);
+    this.writeBuffer = [];
   }
 
   /**
