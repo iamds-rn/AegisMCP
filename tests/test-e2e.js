@@ -133,7 +133,42 @@ async function runE2ETests() {
     assert(invalidCallRes.data.error, 'Calling tools/call without name must return error');
     assert.strictEqual(invalidCallRes.data.error.code, -32602, 'Should return -32602 INVALID_PARAMS');
 
-    console.log('✅ End-to-End Protocol & Gateway: All 10 test cases passed!');
+    // 11. Exploit Payload Generator & Resilience Auditor API endpoint
+    const exploitRes = await postJson(`${baseUrl}/api/firewall/exploit-audit`, {
+      serverName: 'virtual_filesystem',
+      toolName: 'read_file',
+      withFirewall: true
+    });
+    assert.strictEqual(exploitRes.statusCode, 200);
+    assert.strictEqual(exploitRes.data.grade, 'A+');
+    assert.strictEqual(exploitRes.data.defenseScorePct, 100);
+    assert(exploitRes.data.totalExploits >= 15);
+
+    // 12. Cryptographic Ledger Forensics endpoint
+    const forensicsRes = await getJson(`${baseUrl}/api/ledger/forensics`);
+    assert.strictEqual(forensicsRes.statusCode, 200);
+    assert.strictEqual(forensicsRes.data.intact, true);
+    assert(forensicsRes.data.forensicSummary.includes('PRISTINE'));
+
+    // 13. Client Configuration Generator endpoint
+    const configRes = await getJson(`${baseUrl}/api/configs/claude`);
+    assert.strictEqual(configRes.statusCode, 200);
+    assert.strictEqual(configRes.data.name, 'Claude Desktop');
+    assert(configRes.data.snippet);
+
+    // 14. Firewall Rules API endpoint
+    const rulesRes = await getJson(`${baseUrl}/api/firewall/rules`);
+    assert.strictEqual(rulesRes.statusCode, 200);
+    assert(Array.isArray(rulesRes.data.rules));
+    assert(rulesRes.data.rules.length >= 9);
+
+    // 15. Server Fleet endpoint
+    const serversRes = await getJson(`${baseUrl}/api/servers`);
+    assert.strictEqual(serversRes.statusCode, 200);
+    assert(Array.isArray(serversRes.data.servers));
+    assert(serversRes.data.servers.length >= 4);
+
+    console.log('✅ End-to-End Protocol & Gateway: All 15 test cases passed!');
   } finally {
     proxy.stop();
   }

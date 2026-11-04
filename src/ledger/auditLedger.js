@@ -267,15 +267,34 @@ class AuditLedger {
       };
     }
 
-    const brokenIndex = verification.brokenIndex !== undefined ? verification.brokenIndex : -1;
-    const brokenBlock = fullChain.find(b => b.index === brokenIndex) || null;
-    const originalEvent = brokenIndex !== -1 ? this.tamperBackup.get(brokenIndex) : null;
+    if (fullChain.length === 0) {
+      return {
+        intact: false,
+        tamperedIndex: -1,
+        brokenBlock: null,
+        expectedHash: undefined,
+        actualHash: undefined,
+        expectedPrevHash: undefined,
+        actualPrevHash: undefined,
+        errorMessage: verification.error || 'Ledger is empty (missing genesis block)',
+        cascadeBlastRadius: 0,
+        invalidatedIndices: [],
+        fieldDiff: null,
+        forensicSummary: 'CRITICAL INTEGRITY BREACH: Ledger chain is empty (genesis block missing).'
+      };
+    }
 
-    // Calculate downstream cascade
-    const blastRadiusCount = fullChain.length - brokenIndex;
+    const brokenIndex = verification.brokenIndex !== undefined ? verification.brokenIndex : -1;
+    const brokenBlock = brokenIndex >= 0 ? (fullChain.find(b => b.index === brokenIndex) || null) : null;
+    const originalEvent = brokenIndex >= 0 ? this.tamperBackup.get(brokenIndex) : null;
+
+    // Calculate downstream cascade safely
+    const blastRadiusCount = brokenIndex >= 0 ? Math.max(0, fullChain.length - brokenIndex) : 0;
     const invalidatedIndices = [];
-    for (let i = brokenIndex; i < fullChain.length; i++) {
-      invalidatedIndices.push(i);
+    if (brokenIndex >= 0) {
+      for (let i = brokenIndex; i < fullChain.length; i++) {
+        invalidatedIndices.push(i);
+      }
     }
 
     // Compute field-level diff if pristine snapshot exists
@@ -298,6 +317,11 @@ class AuditLedger {
       }
     }
 
+    const errorDesc = verification.error || 'Cryptographic verification failure';
+    const forensicSummary = brokenIndex >= 0
+      ? `CRITICAL INTEGRITY BREACH: Tampering localized at block #${brokenIndex}. Integrity failure: ${errorDesc}. Invalidation blast radius spans ${blastRadiusCount} downstream block(s) [indices: ${invalidatedIndices.slice(0, 5).join(', ')}${invalidatedIndices.length > 5 ? '...' : ''}].`
+      : `CRITICAL INTEGRITY BREACH: Chain invalid: ${errorDesc}.`;
+
     return {
       intact: false,
       tamperedIndex: brokenIndex,
@@ -310,7 +334,7 @@ class AuditLedger {
       cascadeBlastRadius: blastRadiusCount,
       invalidatedIndices,
       fieldDiff,
-      forensicSummary: `CRITICAL INTEGRITY BREACH: Tampering localized at block #${brokenIndex}. Hash mismatch detected: recorded hash does not match computed Merkle hash from payload. Invalidation blast radius spans ${blastRadiusCount} downstream block(s) [indices: ${invalidatedIndices.slice(0, 5).join(', ')}${invalidatedIndices.length > 5 ? '...' : ''}].`
+      forensicSummary
     };
   }
 

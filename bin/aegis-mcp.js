@@ -13,6 +13,7 @@ const { ProtocolFuzzer } = require('../src/fuzzer/fuzzer');
 const { FirewallEngine } = require('../src/firewall/engine');
 const { AuditLedger } = require('../src/ledger/auditLedger');
 const { DynamicRuleSynthesizer } = require('../src/firewall/synthesizer');
+const { ExploitPayloadGenerator } = require('../src/firewall/exploitGenerator');
 const { ClientConfigGenerator } = require('../src/protocol/configGenerator');
 
 const args = process.argv.slice(2);
@@ -31,6 +32,7 @@ COMMANDS:
   --proxy <command>           Wrap & shield an external MCP server stdio command with Aegis firewall
   --generate-config <client>  Generate drop-in client config (claude | cursor | zed | windsurf | all)
   --synthesize <tool>         Synthesize tailored zero-trust security rules for an MCP tool
+  --exploit-test <tool>       Run automated adversarial exploit audit and auto-synthesize countermeasures
   --fuzz                      Run automated adversarial fuzzing audit on target tool
   --verify-ledger             Perform cryptographic integrity check on audit ledger
   --forensics                 Run deep cryptographic tamper localization & blast radius forensics
@@ -78,10 +80,78 @@ async function main() {
   const modeIdx = args.indexOf('--mode');
   const mode = modeIdx !== -1 ? args[modeIdx + 1].toUpperCase() : 'ENFORCE';
 
-  // 1. External Server Stdio Proxy Tunnel: --proxy <command>
+  const upstreamIdx = args.indexOf('--upstream');
   const proxyIdx = args.indexOf('--proxy');
+  const upstreamCommand = (proxyIdx !== -1 && args[proxyIdx + 1] && !args[proxyIdx + 1].startsWith('--'))
+    ? args[proxyIdx + 1]
+    : (upstreamIdx !== -1 && args[upstreamIdx + 1] && !args[upstreamIdx + 1].startsWith('--'))
+      ? args[upstreamIdx + 1]
+      : null;
+
+  // 1. Client Config Generator: --generate-config <client>
+  const configIdx = args.indexOf('--generate-config');
+  if (configIdx !== -1) {
+    const client = (args[configIdx + 1] && !args[configIdx + 1].startsWith('--')) ? args[configIdx + 1] : 'all';
+    try {
+      const config = ClientConfigGenerator.generate(client, {
+        mode,
+        port,
+        proxyCommand: upstreamCommand
+      });
+      console.log(`\n📋 AegisMCP Client Configuration for [${client.toUpperCase()}]:\n`);
+      console.log(JSON.stringify(config, null, 2));
+      console.log('\n💡 Setup Instruction:', config.instruction || 'Paste into client settings.');
+    } catch (err) {
+      console.error(`❌ Error generating config: ${err.message}`);
+      process.exit(1);
+    }
+    return;
+  }
+
+  // 2. Automated Adversarial Exploit Test: --exploit-test <tool>
+  const exploitIdx = args.indexOf('--exploit-test');
+  if (exploitIdx !== -1) {
+    const targetTool = (args[exploitIdx + 1] && !args[exploitIdx + 1].startsWith('--')) ? args[exploitIdx + 1] : 'read_file';
+    console.log(`\n⚔️  Running Automated Adversarial Exploit Audit against "${targetTool}"...\n`);
+
+    const hub = new VirtualHub();
+    const allTools = hub.listAllTools();
+    const tool = allTools.find(t => t.name === targetTool);
+
+    if (!tool) {
+      console.error(`❌ Tool "${targetTool}" not found in Virtual Hub. Available:`);
+      allTools.forEach(t => console.error(`  - ${t.name}`));
+      process.exit(1);
+    }
+
+    const firewall = new FirewallEngine({ mode });
+    const generator = new ExploitPayloadGenerator();
+    const server = hub.getServer(tool.serverName);
+    const invoker = (name, p) => server.callTool(name, p);
+
+    const audit = await generator.runExploitAudit(tool, firewall, invoker);
+
+    console.log(`🛡️  EXPLOIT IMMUNITY SCORECARD: [Grade: ${audit.grade}] (${audit.defenseScorePct}% Defended)`);
+    console.log(`    Total Weaponized Exploits: ${audit.totalExploits}`);
+    console.log(`    Defended / Intercepted:    ${audit.defendedCount}`);
+    console.log(`    Vulnerable / Unmitigated:  ${audit.vulnerableCount}\n`);
+
+    console.log('--- Adversarial Threat Breakdown ---');
+    for (const r of audit.results) {
+      const icon = r.status === 'DEFENDED' ? '🛡️ [DEFENDED]' : '⚠️ [VULNERABLE]';
+      console.log(`${icon} [${r.category}] ${r.name}`);
+      console.log(`    Status:     ${r.status}`);
+      console.log(`    Mechanism:  ${r.defenseMechanism}`);
+      if (r.autoRemediation) {
+        console.log(`    Auto-Remedy: Synthesized rule [${r.autoRemediation.ruleId}] ${r.autoRemediation.ruleName}`);
+      }
+      console.log('');
+    }
+    return;
+  }
+
+  // 3. External Server Stdio Proxy Tunnel: --proxy <command>
   if (proxyIdx !== -1) {
-    const upstreamCommand = args[proxyIdx + 1];
     if (!upstreamCommand) {
       console.error('❌ Error: --proxy requires an upstream command string (e.g. --proxy "npx -y @modelcontextprotocol/server-filesystem /tmp")');
       process.exit(1);
@@ -92,27 +162,11 @@ async function main() {
     return;
   }
 
-  // 2. Standard Stdio Gateway
+  // 4. Standard Stdio Gateway
   if (args.includes('--stdio')) {
     const server = new AegisProxyServer();
     server.firewall.setMode(mode);
     await server.startStdio();
-    return;
-  }
-
-  // 3. Client Config Generator: --generate-config <client>
-  const configIdx = args.indexOf('--generate-config');
-  if (configIdx !== -1) {
-    const client = args[configIdx + 1] || 'all';
-    try {
-      const config = ClientConfigGenerator.generate(client, { mode, port });
-      console.log(`\n📋 AegisMCP Client Configuration for [${client.toUpperCase()}]:\n`);
-      console.log(JSON.stringify(config, null, 2));
-      console.log('\n💡 Setup Instruction:', config.instruction || 'Paste into client settings.');
-    } catch (err) {
-      console.error(`❌ Error generating config: ${err.message}`);
-      process.exit(1);
-    }
     return;
   }
 

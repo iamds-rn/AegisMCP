@@ -74,10 +74,18 @@ const BUILTIN_RULES = {
     description: 'Prevents unauthorized file system directory traversal, relative escaping, and sensitive system file access.',
     check: (params) => {
       const strings = extractAllStrings(params);
-      const traversalRegex = /(\.\.[/\\]|\.\.%2f|\.\.%5c|%2e%2e%2f|%2e%2e\/|\.\.;\/)/i;
-      const sensitiveFiles = /(\/etc\/(passwd|shadow|hosts|sudoers)|\/proc\/(self|\d+)|\/sys\/|\/var\/run\/secrets|~?\/\.(ssh|aws|gnupg|bash_history)|[c-z]:[/\\]windows[/\\]system32)/i;
+      const traversalRegex = /(\.\.[/\\]|\.\.%2f|\.\.%5c|%2e%2e%2f|%2e%2e\/|%252e%252e%252f|%252e%252e\/|%252e%252e%255c|\.\.;\/|\0|%00)/i;
+      const sensitiveFiles = /([/\\]etc[/\\](passwd|shadow|hosts|sudoers)|[/\\]proc[/\\](self|\d+)|[/\\]sys[/\\]|[/\\]var[/\\]run[/\\]secrets|~?[/\\]\.(ssh|aws|gnupg|bash_history)|[c-z]:[/\\]windows[/\\]system32)/i;
 
       for (const str of strings) {
+        if (str.includes('\0') || str.includes('%00')) {
+          return {
+            violation: true,
+            ruleId: 'SEC-001',
+            signature: 'Null Byte Path Poisoning / Extension Truncation',
+            culprit: str.length > 80 ? str.slice(0, 77) + '...' : str
+          };
+        }
         if (traversalRegex.test(str)) {
           return {
             violation: true,
@@ -108,10 +116,10 @@ const BUILTIN_RULES = {
       // If the tool is a known shell execution tool or passes arguments to a shell
       const strings = extractAllStrings(params);
       const dangerousPatterns = [
-        /(;\s*(?:rm|cat|bash|sh|curl|wget|nc|mkfifo|powershell|python|ruby)\b)/i,
-        /(&&\s*(?:rm|cat|bash|sh|curl|wget|nc|mkfifo|powershell|python|ruby)\b)/i,
-        /(\|\|\s*(?:rm|cat|bash|sh|curl|wget|nc|mkfifo|powershell|python|ruby)\b)/i,
-        /(\|\s*(?:bash|sh|curl|wget|nc|powershell)\b)/i,
+        /(?:[;&|]|\r?\n|\r)\s*(?:(?:(?:\/usr)?\/bin\/)?(?:rm|cat|bash|sh|zsh|dash|ksh|python|python3|perl|ruby|node|whoami|id|uname|hostname|env|printenv|sudo|chmod|chown|kill|pkill|find|curl|wget|nc|ncat|netcat|mkfifo|powershell))\b/i,
+        /(&&\s*(?:(?:(?:\/usr)?\/bin\/)?(?:rm|cat|bash|sh|zsh|dash|ksh|python|python3|perl|ruby|node|whoami|id|uname|hostname|env|printenv|sudo|chmod|chown|kill|pkill|find|curl|wget|nc|ncat|netcat|mkfifo|powershell))\b)/i,
+        /(\|\|\s*(?:(?:(?:\/usr)?\/bin\/)?(?:rm|cat|bash|sh|zsh|dash|ksh|python|python3|perl|ruby|node|whoami|id|uname|hostname|env|printenv|sudo|chmod|chown|kill|pkill|find|curl|wget|nc|ncat|netcat|mkfifo|powershell))\b)/i,
+        /(\|\s*(?:(?:(?:\/usr)?\/bin\/)?(?:bash|sh|zsh|dash|ksh|curl|wget|nc|ncat|netcat|powershell|python|ruby))\b)/i,
         /(`[^`]+`|\$\([^)]+\))/, // backticks or $(subshell)
         /(>\s*\/dev\/(?:tcp|udp)\/)/i, // reverse shell redirection
         /(\b(?:eval|exec)\s*\([^)]*\))/i
@@ -146,6 +154,10 @@ const BUILTIN_RULES = {
         { name: 'Private Key Block', regex: /-----BEGIN\s+(?:[A-Z0-9_-]+\s+)?PRIVATE KEY-----/ },
         { name: 'OpenAI API Key', regex: /\b(sk-[A-Za-z0-9]{32,}|sk-proj-[A-Za-z0-9_-]{40,})\b/ },
         { name: 'Anthropic API Key', regex: /\b(sk-ant-[A-Za-z0-9_-]{30,})\b/ },
+        { name: 'Google API Key', regex: /\b(AIza[0-9A-Za-z-_]{35})\b/ },
+        { name: 'Stripe Secret Key', regex: /\b([sr]k_(?:live|test)_[0-9a-zA-Z]{24,})\b/ },
+        { name: 'Hugging Face Token', regex: /\b(hf_[a-zA-Z0-9]{34,})\b/ },
+        { name: 'JSON Web Token (JWT)', regex: /\b(eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})\b/ },
         { name: 'Slack Token', regex: /\b(xox[baprs]-[0-9A-Za-z]{10,})\b/ }
       ];
 
@@ -186,7 +198,7 @@ const BUILTIN_RULES = {
     check: (params) => {
       const strings = extractAllStrings(params);
       const urlRegex = /https?:\/\/[^\s/$.?#].[^\s]*/i;
-      const dangerousProtocols = /^(file|gopher|dict|ftp|tftp|ldap|sftp):\/\//i;
+      const dangerousProtocols = /(?:file|gopher|dict|ftp|tftp|ldap|sftp):\/\//i;
 
       for (const str of strings) {
         if (dangerousProtocols.test(str)) {
@@ -194,17 +206,28 @@ const BUILTIN_RULES = {
             violation: true,
             ruleId: 'SEC-004',
             signature: 'Forbidden Protocol Scheme',
-            culprit: str
+            culprit: str.length > 80 ? str.slice(0, 77) + '...' : str
           };
         }
 
         if (urlRegex.test(str)) {
           try {
-            const parsed = new URL(str);
+            const parsed = new URL(str.trim());
             const hostname = parsed.hostname.toLowerCase();
 
-            // Loopback
-            if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '0.0.0.0' || hostname.startsWith('127.')) {
+            // Loopback and unspecified addresses (IPv4 & IPv6 formats)
+            if (
+              hostname === 'localhost' ||
+              hostname === '127.0.0.1' ||
+              hostname === '[::1]' ||
+              hostname === '0.0.0.0' ||
+              hostname === '[::]' ||
+              hostname === '[0:0:0:0:0:0:0:0]' ||
+              hostname === '[0:0:0:0:0:0:0:1]' ||
+              hostname.startsWith('127.') ||
+              hostname.startsWith('[::ffff:7f') ||
+              hostname.startsWith('[::ffff:127.')
+            ) {
               return {
                 violation: true,
                 ruleId: 'SEC-004',
@@ -214,7 +237,14 @@ const BUILTIN_RULES = {
             }
 
             // Cloud Metadata endpoints
-            if (hostname === '169.254.169.254' || hostname === 'metadata.google.internal' || hostname === '100.100.100.200') {
+            if (
+              hostname === '169.254.169.254' ||
+              hostname === '[::ffff:a9fe:a9fe]' ||
+              hostname === '[::ffff:169.254.169.254]' ||
+              hostname === 'metadata.google.internal' ||
+              hostname === '100.100.100.200' ||
+              hostname.startsWith('169.254.')
+            ) {
               return {
                 violation: true,
                 ruleId: 'SEC-004',
@@ -224,9 +254,13 @@ const BUILTIN_RULES = {
             }
 
             // RFC 1918 Private Ranges
-            if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
-                /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
-                /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname)) {
+            if (
+              /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+              /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+              /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+              hostname.startsWith('[::ffff:0a') ||
+              hostname.startsWith('[::ffff:c0a8')
+            ) {
               return {
                 violation: true,
                 ruleId: 'SEC-004',
@@ -310,11 +344,11 @@ const BUILTIN_RULES = {
     check: (params) => {
       const strings = extractAllStrings(params);
       const injectionPatterns = [
-        { name: 'Instruction Override', regex: /(?:ignore|disregard|forget|skip)\s+(?:all\s+)?(?:previous|prior|above)\s+(?:instructions|prompts|directives|rules)\b/i },
+        { name: 'Instruction Override', regex: /(?:ignore|disregard|forget|skip)\s+(?:all\s+)?(?:previous|prior|above|preceding)\s+(?:instructions|prompts|directives|rules)\b/i },
         { name: 'System Prompt Override', regex: /(?:system\s+prompt\s+override|override\s+system\s+instructions)\b/i },
         { name: 'Jailbreak / Developer Mode', regex: /(?:you\s+are\s+now\s+in\s+(?:developer|dan|unrestricted|god)\s+mode|do\s+anything\s+now\s+mode|jailbroken\s+mode)\b/i },
         { name: 'System Prompt Extraction', regex: /(?:reveal|print|display|dump)\s+(?:your\s+)?(?:system\s+prompt|hidden\s+instructions|internal\s+guidelines)\b/i },
-        { name: 'Special LLM Delimiter Breakout', regex: /(?:<\|im_start\|>|<\|im_end\|>|<\|system\|>|\[INST\]|\[\/INST\])/i }
+        { name: 'Special LLM Delimiter Breakout', regex: /(?:<\|im_start\|>|<\|im_end\|>|<\|system\|>|\[INST\]|\[\/INST\]|<<SYS>>|<\/s>|<start_of_turn>|<end_of_turn>)/i }
       ];
 
       for (const str of strings) {
@@ -343,9 +377,9 @@ const BUILTIN_RULES = {
       const sqlPatterns = [
         { name: 'Union-based Extraction', regex: /(\b(?:UNION\s+(?:ALL\s+)?SELECT)\b)/i },
         { name: 'Boolean Bypass', regex: /(?:'\s*(?:OR|AND)\s*'?\w+'?\s*=\s*'?\w+'?|\b(?:OR|AND)\s+(?:1=1|true=true))/i },
-        { name: 'Destructive DDL/DML', regex: /(\b(?:DROP|TRUNCATE|ALTER)\s+(?:TABLE|DATABASE|VIEW)\b)/i },
+        { name: 'Destructive DDL/DML', regex: /(\b(?:DROP|TRUNCATE|ALTER)\s+(?:TABLE|DATABASE|VIEW)\b|\bDELETE\s+FROM\b|\bUPDATE\s+\w+\s+SET\b|\bINSERT\s+INTO\b)/i },
         { name: 'Stored Procedure Exec', regex: /(\b(?:EXEC|EXECUTE)\s*(?:\(|\s+)(?:@|xp_|sp_))/i },
-        { name: 'Time-Based Blind Injection', regex: /(\bSLEEP\s*\(\s*\d+\s*\)|\bBENCHMARK\s*\(\s*\d+)/i }
+        { name: 'Time-Based Blind Injection', regex: /(\bSLEEP\s*\(\s*\d+\s*\)|\bBENCHMARK\s*\(\s*\d+|\bpg_sleep\s*\(\s*\d+\s*\)|\bWAITFOR\s+DELAY\s+'[^']+')/i }
       ];
 
       for (const str of strings) {
@@ -383,7 +417,45 @@ const BUILTIN_RULES = {
         }
       }
 
-      // 2. Traversal for string keys and values
+      // 2. Deep recursive check for structured prototype pollution keys
+      function hasStructuredPollution(obj, depth = 0, visited = new Set()) {
+        if (!obj || typeof obj !== 'object' || depth > 10 || visited.has(obj)) return false;
+        visited.add(obj);
+
+        const keys = Object.getOwnPropertyNames(obj);
+        if (keys.includes('__proto__')) return true;
+
+        if (keys.includes('constructor') && obj.constructor && typeof obj.constructor === 'object') {
+          if (Object.getOwnPropertyNames(obj.constructor).includes('prototype')) return true;
+        }
+
+        for (const k of keys) {
+          const val = obj[k];
+          if (val && typeof val === 'object') {
+            if (k === 'constructor' && (Object.prototype.hasOwnProperty.call(val, 'prototype') || Object.getOwnPropertyNames(val).includes('prototype'))) {
+              return true;
+            }
+            if (k === '__proto__') {
+              return true;
+            }
+            if (hasStructuredPollution(val, depth + 1, visited)) {
+              return true;
+            }
+          }
+        }
+        return false;
+      }
+
+      if (hasStructuredPollution(params)) {
+        return {
+          violation: true,
+          ruleId: 'SEC-008',
+          signature: 'Prototype Pollution: Structured Object Injection Detected',
+          culprit: 'constructor.prototype / __proto__'
+        };
+      }
+
+      // 3. Traversal for string keys and values
       const strings = extractAllStrings(params);
       const pollutionRegex = /(\b__proto__\b|\bconstructor\.prototype\b|\bprototype\.constructor\b)/i;
 
@@ -410,11 +482,11 @@ const BUILTIN_RULES = {
       const strings = extractAllStrings(params);
       const sensitiveFiles = [
         { name: 'Environment Configuration File', regex: /(\.env(\.(?:local|prod|production|dev|development|test|staging))?)\b/i },
-        { name: 'Cloud Credentials Store', regex: /(\.aws\/(?:credentials|config)|\.azure\/|\.gcloud\/)/i },
+        { name: 'Cloud Credentials Store', regex: /([/\\]\.aws[/\\](?:credentials|config)|[/\\]\.azure[/\\]|[/\\]\.gcloud[/\\]|^\.aws[/\\](?:credentials|config)|^\.azure[/\\]|^\.gcloud[/\\])/i },
         { name: 'SSH Private Key Identity', regex: /(\b(?:id_rsa|id_ed25519|id_ecdsa|id_dsa)(?:\.pub)?)\b/i },
-        { name: 'Kubernetes or Docker Config', regex: /(\.kube\/config|\.docker\/config\.json)\b/i },
+        { name: 'Kubernetes or Docker Config', regex: /([/\\]\.kube[/\\]config|[/\\]\.docker[/\\]config\.json|^\.kube[/\\]config|^\.docker[/\\]config\.json)\b/i },
         { name: 'Cloud Service Account Key', regex: /(\b(?:service[-_]?account|gcp[-_]creds|firebase[-_]adminsdk).*\.json)\b/i },
-        { name: 'System Secrets File', regex: /(\/etc\/(?:environment|security\/limits\.conf|shadow))\b/i }
+        { name: 'System Secrets File', regex: /([/\\]etc[/\\](?:environment|security[/\\]limits\.conf|shadow))\b/i }
       ];
 
       for (const str of strings) {

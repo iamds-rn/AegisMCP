@@ -129,3 +129,24 @@ Outputs ready-to-paste configurations tailored for leading AI development enviro
 - **Windsurf**: `mcp_config.json` schema.
 - **HTTP/SSE Gateway**: Direct curl / web-ready endpoint definitions.
 
+---
+
+## 9. Automated Exploit Payload Generator & Self-Healing Immune Cycle (v1.2.0)
+
+AegisMCP features an active adversarial auditing engine that goes beyond passive validation to generate weaponized exploits against tool definitions:
+- **Weaponized Threat Vectors**: Generates realistic payloads targeting 9 distinct attack surfaces:
+  1. `PATH_TRAVERSAL`: POSIX `../../`, double-URL encoded `%252e%252e%252f`, null-byte poisoning `\x00`, Windows backslashes `..\..\`.
+  2. `COMMAND_INJECTION`: Subshells, semicolon chaining, pipe redirectors, newlines, and recon binaries (`whoami`, `id`, `uname`, `env`).
+  3. `SECRET_LEAKAGE`: AWS access keys, GitHub PATs, OpenAI keys, Stripe live keys, Google API keys, and JWT signatures.
+  4. `SSRF_EGRESS`: IPv4-mapped IPv6 loopbacks (`[::ffff:127.0.0.1]`), cloud metadata IP variants (`[::ffff:169.254.169.254]`), and non-HTTP protocols (`file://`, `gopher://`).
+  5. `PROMPT_INJECTION`: Direct jailbreaks, roleplay subversions, model delimiters (`<<SYS>>`, `<start_of_turn>`, `[INST]`), and bidirectional Unicode evasion.
+  6. `SQL_INJECTION`: Destructive DML (`DELETE`, `DROP`), boolean tautologies (`' OR '1'='1`), and blind time-delay sleep calls (`pg_sleep`, `WAITFOR DELAY`).
+  7. `PROTOTYPE_POLLUTION`: Structured object injection (`{ constructor: { prototype: ... } }`) and own-property `__proto__` injection.
+  8. `ENV_SECRETS_EXFILTRATION`: Targeting `.env.production`, `.aws/credentials`, Kubernetes client config, and SSH private keys.
+  9. `DOS_BUFFER_EXHAUSTION`: Recursive nesting depth stress (>12 levels) and oversized buffer exhaustion (>512 KB).
+- **Self-Healing Closed Loop**:
+  When an exploit penetrates the baseline defenses in audit mode, Aegis triggers `DynamicRuleSynthesizer.synthesizeRulesForTool()`, instantly synthesizing and hot-reloading a specific countermeasure rule into the live firewall engine with zero server restarts.
+- **Exploit Studio UI**:
+  Visual penetration testing console in the Web Studio with 1-click execution, categorized threat badges, defensive mechanism trace, and automatic immune defense activation.
+
+

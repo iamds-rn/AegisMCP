@@ -33,8 +33,12 @@ function runNewRulesTests() {
   assert(sqlRule.check({ query: "SELECT * FROM users WHERE id = 1 UNION SELECT null, username, password FROM users" }).violation, 'Should detect UNION SELECT injection');
   assert(sqlRule.check({ filter: "admin' OR '1'='1" }).violation, 'Should detect boolean tautology bypass');
   assert(sqlRule.check({ sql: "DROP TABLE users; --" }).violation, 'Should detect DROP TABLE');
+  assert(sqlRule.check({ sql: "DELETE FROM users" }).violation, 'Should detect DELETE FROM destructive DML');
+  assert(sqlRule.check({ sql: "UPDATE users SET admin = 1" }).violation, 'Should detect UPDATE ... SET destructive DML');
   assert(sqlRule.check({ stmt: "SELECT id FROM accounts WHERE name = 'test' OR 1=1" }).violation, 'Should detect 1=1 bypass');
   assert(sqlRule.check({ q: "EXEC xp_cmdshell 'dir'" }).violation, 'Should detect xp_cmdshell stored procedure exec');
+  assert(sqlRule.check({ query: "SELECT pg_sleep(5)" }).violation, 'Should detect PostgreSQL pg_sleep');
+  assert(sqlRule.check({ query: "WAITFOR DELAY '0:0:5'" }).violation, 'Should detect MSSQL WAITFOR DELAY');
   assert(!sqlRule.check({ query: "SELECT id, name, created_at FROM orders WHERE status = 'shipped' LIMIT 10" }).violation, 'Should allow standard parameterized-style query');
 
   // 3. Prototype Pollution Guard (SEC-008)
@@ -43,6 +47,7 @@ function runNewRulesTests() {
   assert.strictEqual(protoRule.id, 'SEC-008');
 
   assert(protoRule.check({ __proto__: { isAdmin: true } }).violation, 'Should detect __proto__ property injection');
+  assert(protoRule.check({ constructor: { prototype: { admin: true } } }).violation, 'Should detect structured constructor.prototype injection');
   assert(protoRule.check({ path: 'constructor.prototype.polluted' }).violation, 'Should detect constructor.prototype');
   assert(!protoRule.check({ safeKey: 'normalValue', nested: { safeChild: true } }).violation, 'Should allow standard clean objects');
 
@@ -54,9 +59,11 @@ function runNewRulesTests() {
   assert(envRule.check({ file: '.env' }).violation, 'Should detect .env file access');
   assert(envRule.check({ file: '.env.local' }).violation, 'Should detect .env.local file access');
   assert(envRule.check({ path: '~/.aws/credentials' }).violation, 'Should detect AWS credentials store access');
+  assert(envRule.check({ path: '.aws\\credentials' }).violation, 'Should detect AWS credentials store access with Windows backslashes');
   assert(envRule.check({ keyFile: 'id_rsa' }).violation, 'Should detect SSH id_rsa private key access');
   assert(envRule.check({ cert: 'id_ed25519' }).violation, 'Should detect SSH id_ed25519 private key access');
   assert(envRule.check({ config: '.kube/config' }).violation, 'Should detect kubeconfig access');
+  assert(envRule.check({ config: '.kube\\config' }).violation, 'Should detect kubeconfig access with Windows backslashes');
   assert(envRule.check({ token: 'service-account.json' }).violation, 'Should detect GCP service account key access');
   assert(!envRule.check({ file: '/workspace/package.json' }).violation, 'Should allow safe project file');
 

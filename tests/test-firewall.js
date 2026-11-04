@@ -21,6 +21,9 @@ function runFirewallTests() {
   const pathRule = BUILTIN_RULES.PATH_TRAVERSAL;
   assert(pathRule.check({ path: '../../etc/passwd' }).violation, 'Should detect ../ traversal');
   assert(pathRule.check({ path: '..\\..\\windows\\system32' }).violation, 'Should detect ..\\ Windows traversal');
+  assert(pathRule.check({ path: '%252e%252e%252fetc%252fpasswd' }).violation, 'Should detect double-encoded traversal %252e%252e%252f');
+  assert(pathRule.check({ path: '\\etc\\passwd' }).violation, 'Should detect sensitive path with backslash');
+  assert(pathRule.check({ path: 'document.pdf\0.png' }).violation, 'Should detect null byte path poisoning');
   assert(pathRule.check({ file: '/etc/shadow' }).violation, 'Should detect /etc/shadow access');
   assert(pathRule.check({ file: '~/.ssh/id_rsa' }).violation, 'Should detect ~/.ssh/ key access');
   assert(!pathRule.check({ path: '/workspace/project.json' }).violation, 'Should allow safe path /workspace/project.json');
@@ -32,6 +35,10 @@ function runFirewallTests() {
   assert(cmdRule.check({ cmd: 'whoami | bash' }).violation, 'Should detect pipe to bash');
   assert(cmdRule.check({ cmd: '`id`' }).violation, 'Should detect backtick execution');
   assert(cmdRule.check({ cmd: '$(cat /etc/passwd)' }).violation, 'Should detect $(subshell)');
+  assert(cmdRule.check({ cmd: 'ls ; whoami' }).violation, 'Should detect recon command whoami');
+  assert(cmdRule.check({ cmd: 'ls ; id' }).violation, 'Should detect recon command id');
+  assert(cmdRule.check({ cmd: 'ls ; /bin/sh' }).violation, 'Should detect path-qualified binary /bin/sh');
+  assert(cmdRule.check({ cmd: 'echo ok\nrm -rf /' }).violation, 'Should detect newline command separator');
   assert(!cmdRule.check({ query: 'hello world standard search' }).violation, 'Should allow safe arguments');
 
   // 4. Secret Leakage Guard (SEC-003)
@@ -40,6 +47,9 @@ function runFirewallTests() {
   assert(secretRule.check({ token: 'ghp_123456789012345678901234567890123456' }).violation, 'Should detect GitHub PAT');
   assert(secretRule.check({ key: '-----BEGIN RSA PRIVATE KEY-----\nMIIE...' }).violation, 'Should detect Private Key block');
   assert(secretRule.check({ auth: 'sk-proj-12345678901234567890123456789012345678901234567890' }).violation, 'Should detect OpenAI key');
+  assert(secretRule.check({ key: 'AIzaSyD-1234567890abcdefABCDEF123456789' }).violation, 'Should detect Google API key');
+  assert(secretRule.check({ key: 'sk_' + 'live_' + '51NzABCDEFGHIJKLM1234567890NOPQRSTUVWXYZ' }).violation, 'Should detect Stripe live key');
+  assert(secretRule.check({ token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c' }).violation, 'Should detect JWT');
   assert(!secretRule.check({ text: 'normal developer communication note' }).violation, 'Should allow normal text');
 
   // 5. SSRF Guard (SEC-004)
@@ -49,6 +59,9 @@ function runFirewallTests() {
   assert(ssrfRule.check({ url: 'http://169.254.169.254/latest/meta-data/' }).violation, 'Should detect cloud metadata SSRF');
   assert(ssrfRule.check({ url: 'http://10.0.0.5/internal-api' }).violation, 'Should detect RFC 1918 private range');
   assert(ssrfRule.check({ url: 'file:///etc/passwd' }).violation, 'Should detect file:// protocol scheme');
+  assert(ssrfRule.check({ url: ' file:///etc/passwd' }).violation, 'Should detect file:// with leading whitespace');
+  assert(ssrfRule.check({ url: 'http://[::ffff:127.0.0.1]:8080/' }).violation, 'Should detect IPv4-mapped IPv6 loopback');
+  assert(ssrfRule.check({ url: 'http://[::ffff:169.254.169.254]/' }).violation, 'Should detect IPv4-mapped IPv6 cloud metadata');
   assert(!ssrfRule.check({ url: 'https://api.github.com/status' }).violation, 'Should allow public safe URL');
 
   // 6. FirewallEngine in ENFORCE Mode

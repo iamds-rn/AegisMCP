@@ -19,6 +19,7 @@ const {
   VirtualHttpSimulatorServer
 } = require('./servers/virtualHub');
 const { DynamicRuleSynthesizer } = require('./firewall/synthesizer');
+const { ExploitPayloadGenerator } = require('./firewall/exploitGenerator');
 const { ExternalProcessServer } = require('./servers/externalProcessServer');
 const { ClientConfigGenerator } = require('./protocol/configGenerator');
 const { AegisProxyServer } = require('./protocol/proxy');
@@ -32,6 +33,7 @@ module.exports = {
   MODES,
   rules,
   DynamicRuleSynthesizer,
+  ExploitPayloadGenerator,
   // Audit Ledger
   AuditBlock,
   AuditLedger,

@@ -17,6 +17,7 @@ const { VirtualHub } = require('../servers/virtualHub');
 const { ProtocolFuzzer } = require('../fuzzer/fuzzer');
 const { DAGEngine } = require('../pipeline/dagEngine');
 const { DynamicRuleSynthesizer } = require('../firewall/synthesizer');
+const { ExploitPayloadGenerator } = require('../firewall/exploitGenerator');
 const { ClientConfigGenerator } = require('./configGenerator');
 
 class AegisProxyServer {
@@ -27,6 +28,7 @@ class AegisProxyServer {
     this.hub = options.hub || new VirtualHub();
     this.fuzzer = new ProtocolFuzzer();
     this.synthesizer = new DynamicRuleSynthesizer();
+    this.exploitGen = new ExploitPayloadGenerator({ synthesizer: this.synthesizer });
     this.dagEngine = new DAGEngine({ firewall: this.firewall, ledger: this.ledger });
     this.upstreamCommand = options.upstreamCommand || null;
     this.upstreamServer = null;
@@ -53,12 +55,12 @@ class AegisProxyServer {
             firewall: true,
             auditLedger: true,
             fuzzer: true,
-            version: '1.0.0'
+            version: '1.2.0'
           }
         },
         serverInfo: {
           name: 'AegisMCP-Proxy',
-          version: '1.0.0'
+          version: '1.2.0'
         }
       });
     }
@@ -228,7 +230,7 @@ class AegisProxyServer {
         // Health endpoint
         if (url.pathname === '/health') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'healthy', version: '1.0.0', uptime: process.uptime() }));
+          res.end(JSON.stringify({ status: 'healthy', version: '1.2.0', uptime: process.uptime() }));
           return;
         }
 
@@ -534,6 +536,56 @@ class AegisProxyServer {
                 grade: audit.grade,
                 scorePct: audit.scorePct,
                 totalTests: audit.totalTests
+              });
+
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(audit));
+            } catch (err) {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+          return;
+        }
+
+        // Exploit Payload Generator & Resilience Auditor API endpoint
+        if (req.method === 'POST' && url.pathname === '/api/firewall/exploit-audit') {
+          let body = '';
+          req.on('data', chunk => { body += chunk; });
+          req.on('end', async () => {
+            try {
+              const data = JSON.parse(body || '{}');
+              const { serverName = 'virtual_filesystem', toolName = 'read_file', withFirewall = true, autoHotReload = false } = data;
+              const server = this.hub.getServer(serverName);
+              if (!server) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: `Server not found: ${serverName}` }));
+                return;
+              }
+              const tool = server.getTools().find(t => t.name === toolName);
+              if (!tool) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: `Tool not found: ${toolName}` }));
+                return;
+              }
+
+              const invoker = (tName, payload) => server.callTool(tName, payload);
+              const audit = await this.exploitGen.runExploitAudit(tool, withFirewall ? this.firewall : null, invoker);
+
+              if (autoHotReload && audit.autoSynthesizedRules && audit.autoSynthesizedRules.length > 0) {
+                for (const rule of audit.autoSynthesizedRules) {
+                  this.firewall.addCustomRule(rule);
+                  this.ledger.append('CUSTOM_RULE_HOT_LOADED', { ruleId: rule.id, name: rule.name, source: 'EXPLOIT_AUDITOR' });
+                }
+              }
+
+              this.ledger.append('EXPLOIT_AUDIT_COMPLETED', {
+                server: serverName,
+                tool: toolName,
+                grade: audit.grade,
+                defenseScorePct: audit.defenseScorePct,
+                totalExploits: audit.totalExploits,
+                vulnerableCount: audit.vulnerableCount
               });
 
               res.writeHead(200, { 'Content-Type': 'application/json' });

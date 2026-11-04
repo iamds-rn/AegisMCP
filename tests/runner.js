@@ -15,12 +15,13 @@ const { runExternalServerTests } = require('./test-external-server');
 const { runConfigGeneratorTests } = require('./test-config-generator');
 const { runPipelineTests } = require('./test-pipeline');
 const { runFuzzerTests } = require('./test-fuzzer');
+const { runExploitGeneratorTests } = require('./test-exploit-generator');
 const { runE2ETests } = require('./test-e2e');
 
 async function main() {
   console.log(`
 🛡️  ==============================================================
-    AEGIS-MCP COMPREHENSIVE AUTOMATED TEST SUITE (v1.1.0)
+    AEGIS-MCP COMPREHENSIVE AUTOMATED TEST SUITE (v1.2.0)
 ==============================================================
 `);
 
@@ -32,6 +33,7 @@ async function main() {
     { name: 'Cryptographic Audit Ledger', fn: runLedgerTests },
     { name: 'Time-Travel Forensics & Tamper Localization', fn: runForensicsTests },
     { name: 'Dynamic Security Rule Synthesizer', fn: runSynthesizerTests },
+    { name: 'Automated Exploit Payload Generator & Resilience Auditor', fn: runExploitGeneratorTests },
     { name: 'Virtual MCP Servers Fleet', fn: runVirtualServerTests },
     { name: 'External MCP Server stdio Proxy Tunneling', fn: runExternalServerTests },
     { name: 'AI Client Configuration Generator', fn: runConfigGeneratorTests },
@@ -57,19 +59,20 @@ async function main() {
     ALL TEST SUITES PASSED! (${passedSuites}/${suites.length})
     Total Duration: ${duration}s
     Security Invariants Verified:
-      ✔ Path Traversal Interception (SEC-001)
-      ✔ Command Injection Prevention (SEC-002)
-      ✔ Secret & Credential Leakage Shield (SEC-003)
-      ✔ SSRF & Cloud Metadata Protection (SEC-004)
-      ✔ Payload Blast Radius / DoS Guard (SEC-005)
+      ✔ Path Traversal Interception & Double Encoding (SEC-001)
+      ✔ Command Injection Prevention & Recon Sanitization (SEC-002)
+      ✔ Secret, Key & JWT Leakage Shield (SEC-003)
+      ✔ SSRF & IPv4-Mapped IPv6 Cloud Metadata Protection (SEC-004)
+      ✔ Payload Blast Radius / Recursive DoS Guard (SEC-005)
       ✔ Prompt Injection & Instruction Hijacking Guard (SEC-006)
-      ✔ SQL & Query Injection Guard (SEC-007)
-      ✔ Prototype Pollution & Object Injection Guard (SEC-008)
-      ✔ Secrets & Environment Exfiltration Guard (SEC-009)
-      ✔ Dynamic Security Rule Synthesis & Hot-Reloading
+      ✔ SQL, DML & Blind Sleep Injection Guard (SEC-007)
+      ✔ Structured Prototype Pollution & Object Injection Guard (SEC-008)
+      ✔ Cross-Platform Secrets & Environment Exfiltration Guard (SEC-009)
+      ✔ Dynamic Security Rule Synthesis & Auto-Remediation
+      ✔ Automated Weaponized Exploit Generation & Immune Auto-Defense
       ✔ Time-Travel Forensic Localization & Blast Radius Audit
       ✔ 1-Click Cryptographic Healing & Chain Restoration
-      ✔ External MCP Server stdio Proxy Tunneling
+      ✔ External MCP Server stdio Proxy Tunneling (Quoted Shell Handling)
       ✔ Drop-in Client Configs (Claude Desktop, Cursor, Zed, Windsurf)
       ✔ SHA-256 Merkle-Chained Tamper Detection
       ✔ Automated Schema Mutation & Protocol Fuzzing

@@ -133,7 +133,26 @@ async function runExternalServerTests() {
 
   hub.shutdownAll();
 
-  console.log('✅ External MCP Server stdio Proxy Tunneling: All 6 test cases passed!');
+  // 7. Tokenize Command Unit Tests
+  const { tokenizeCommand } = require('../src/servers/externalProcessServer');
+  const tokens1 = tokenizeCommand('npx -y @modelcontextprotocol/server-filesystem "/path with spaces/data"');
+  assert.deepStrictEqual(tokens1, ['npx', '-y', '@modelcontextprotocol/server-filesystem', '/path with spaces/data']);
+
+  const tokens2 = tokenizeCommand("node server.js 'single quoted string' --flag");
+  assert.deepStrictEqual(tokens2, ['node', 'server.js', 'single quoted string', '--flag']);
+
+  // 8. Spawn external server using single command string with quoted args
+  const quotedExt = new ExternalProcessServer({
+    name: 'ext_quoted',
+    command: `node "${mockServerPath}"`
+  });
+  await quotedExt.start();
+  assert.strictEqual(quotedExt.status, 'CONNECTED');
+  const qTools = quotedExt.getTools();
+  assert.strictEqual(qTools.length, 1);
+  quotedExt.stop();
+
+  console.log('✅ External MCP Server stdio Proxy Tunneling: All 8 test cases passed!');
 }
 
 module.exports = { runExternalServerTests };

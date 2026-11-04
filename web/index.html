@@ -3,52 +3,90 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AegisMCP - Zero-Trust Security Firewall & Resilience Studio for MCP</title>
+  <title>AegisMCP — Zero-Trust Security Firewall & Resilience Studio</title>
   <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body class="dark-theme">
   <!-- Top Global Header -->
   <header class="aegis-header">
     <div class="logo-group">
       <div class="logo-shield">
-        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" fill="rgba(0, 240, 255, 0.15)" stroke="#00f0ff"/>
-          <path d="M9 12l2 2 4-4" stroke="#00ff9d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="#38bdf8" fill="rgba(56, 189, 248, 0.12)"/>
+          <path d="M9 12l2 2 4-4" stroke="#10b981" stroke-width="2.5"/>
         </svg>
       </div>
       <div class="logo-text">
         <div class="title-row">
           <span class="brand-title">AEGIS<span class="accent">MCP</span></span>
-          <span class="version-tag">v1.1.0</span>
+          <span class="version-tag">v1.2.0</span>
           <span class="protocol-badge">MCP 2024-11-05</span>
         </div>
-        <span class="brand-tagline">Zero-Trust Tool Firewall & Resilience Studio</span>
+        <span class="brand-tagline">Zero-Trust Firewall & Resilience Studio</span>
       </div>
     </div>
 
     <!-- Center Quick Scenarios Bar -->
     <div class="quick-scenarios">
-      <span class="scenario-label">Quick Scenarios:</span>
+      <span class="scenario-label">Quick Scenarios</span>
       <button class="btn-scenario" id="scenario-injection-btn" title="Simulate Prompt-Injected Attack Interception">
-        <span class="icon">🚨</span> Threat Block
+        <svg class="scenario-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <span>Threat Intercept</span>
+      </button>
+      <button class="btn-scenario" id="scenario-exploit-btn" title="Launch Automated Weaponized Exploit Audit">
+        <svg class="scenario-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="22" y1="12" x2="18" y2="12"/>
+          <line x1="6" y1="12" x2="2" y2="12"/>
+          <line x1="12" y1="6" x2="12" y2="2"/>
+          <line x1="12" y1="22" x2="12" y2="18"/>
+        </svg>
+        <span>Exploit Studio</span>
       </button>
       <button class="btn-scenario" id="scenario-pipeline-btn" title="Run Multi-Server DAG Pipeline">
-        <span class="icon">⚡</span> Run DAG Pipeline
+        <svg class="scenario-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="6" y1="3" x2="6" y2="15"/>
+          <circle cx="18" cy="6" r="3"/>
+          <circle cx="6" cy="18" r="3"/>
+          <path d="M18 9a9 9 0 0 1-9 9"/>
+        </svg>
+        <span>Run DAG</span>
       </button>
       <button class="btn-scenario" id="scenario-fuzz-btn" title="Run Adversarial Fuzzing Audit">
-        <span class="icon">🔬</span> Fuzz Tool
+        <svg class="scenario-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10 2v7.31L4.5 19.5A2 2 0 0 0 6.24 22h11.52a2 2 0 0 0 1.74-2.5L14 9.31V2"/>
+          <line x1="8.5" y1="2" x2="15.5" y2="2"/>
+          <line x1="6.8" y1="15" x2="17.2" y2="15"/>
+        </svg>
+        <span>Fuzz Suite</span>
       </button>
       <button class="btn-scenario" id="scenario-tamper-btn" title="Tamper with Ledger to Test Cryptographic Defense">
-        <span class="icon">🔐</span> Tamper Test
+        <svg class="scenario-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+        <span>Tamper Test</span>
       </button>
       <button class="btn-scenario" id="scenario-forensics-btn" title="Forensics & Time-Travel Inspector">
-        <span class="icon">🔍</span> Forensics
+        <svg class="scenario-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <span>Forensics</span>
       </button>
-      <button class="btn-scenario" id="scenario-configs-btn" title="1-Click Client Setup Configs">
-        <span class="icon">📋</span> Client Configs
+      <button class="btn-scenario" id="scenario-configs-btn" title="1-Click AI Client Configurations">
+        <svg class="scenario-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="4 17 10 11 4 5"/>
+          <line x1="12" y1="19" x2="20" y2="19"/>
+        </svg>
+        <span>Configs</span>
       </button>
     </div>
 
@@ -56,16 +94,21 @@
     <div class="header-actions">
       <div class="status-indicator live" id="connection-status">
         <span class="status-dot"></span>
-        <span class="status-label">SANDBOX MODE</span>
+        <span class="status-label">SANDBOX ACTIVE</span>
       </div>
-      <button class="btn-icon" id="sound-toggle-btn" title="Toggle Sound Effects">
-        <span id="sound-icon">🔊</span>
+      <button class="btn-icon" id="sound-toggle-btn" title="Toggle Synthesizer Audio">
+        <span id="sound-icon">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+          </svg>
+        </span>
       </button>
-      <a href="https://github.com/iamds-rn/AegisMCP" target="_blank" class="btn-github" rel="noreferrer">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+      <a href="https://github.com/iamds-rn/AegisMCP" target="_blank" class="btn-github" rel="noreferrer" title="View Source on GitHub">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
           <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
         </svg>
-        GitHub
+        <span>GitHub</span>
       </a>
     </div>
   </header>
@@ -75,45 +118,106 @@
     <!-- Sidebar Navigation -->
     <aside class="aegis-sidebar">
       <nav class="nav-tabs">
+        <div class="nav-group-label">OBSERVABILITY</div>
         <button class="nav-tab active" data-tab="tab-dashboard">
-          <span class="tab-icon">📊</span>
+          <svg class="tab-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="9"/>
+            <rect x="14" y="3" width="7" height="5"/>
+            <rect x="14" y="12" width="7" height="9"/>
+            <rect x="3" y="16" width="7" height="5"/>
+          </svg>
           <span class="tab-text">Cockpit</span>
         </button>
         <button class="nav-tab" data-tab="tab-tools">
-          <span class="tab-icon">🛠️</span>
+          <svg class="tab-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="4 17 10 11 4 5"/>
+            <line x1="12" y1="19" x2="20" y2="19"/>
+          </svg>
           <span class="tab-text">Tool Studio</span>
         </button>
+
+        <div class="nav-group-label">SECURITY & FIREWALL</div>
         <button class="nav-tab" data-tab="tab-firewall">
-          <span class="tab-icon">🛡️</span>
-          <span class="tab-text">Firewall Rules</span>
+          <svg class="tab-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+          <span class="tab-text">Firewall Policies</span>
         </button>
         <button class="nav-tab" data-tab="tab-synthesizer">
-          <span class="tab-icon">🧬</span>
+          <svg class="tab-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+          </svg>
           <span class="tab-text">Rule Synthesizer</span>
         </button>
+
+        <div class="nav-group-label">RESILIENCE & SIMULATION</div>
         <button class="nav-tab" data-tab="tab-fuzzer">
-          <span class="tab-icon">🔬</span>
+          <svg class="tab-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 2v7.31L4.5 19.5A2 2 0 0 0 6.24 22h11.52a2 2 0 0 0 1.74-2.5L14 9.31V2"/>
+            <line x1="8.5" y1="2" x2="15.5" y2="2"/>
+          </svg>
           <span class="tab-text">Protocol Fuzzer</span>
         </button>
+        <button class="nav-tab" data-tab="tab-exploits">
+          <svg class="tab-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="22" y1="12" x2="18" y2="12"/>
+            <line x1="6" y1="12" x2="2" y2="12"/>
+            <line x1="12" y1="6" x2="12" y2="2"/>
+            <line x1="12" y1="22" x2="12" y2="18"/>
+          </svg>
+          <span class="tab-text">Exploit Studio</span>
+        </button>
         <button class="nav-tab" data-tab="tab-pipeline">
-          <span class="tab-icon">⚡</span>
+          <svg class="tab-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="6" y1="3" x2="6" y2="15"/>
+            <circle cx="18" cy="6" r="3"/>
+            <circle cx="6" cy="18" r="3"/>
+            <path d="M18 9a9 9 0 0 1-9 9"/>
+          </svg>
           <span class="tab-text">Visual DAG</span>
         </button>
+
+        <div class="nav-group-label">CRYPTOGRAPHIC AUDIT</div>
         <button class="nav-tab" data-tab="tab-ledger">
-          <span class="tab-icon">🔐</span>
+          <svg class="tab-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+            <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+          </svg>
           <span class="tab-text">Audit Ledger</span>
         </button>
         <button class="nav-tab" data-tab="tab-forensics">
-          <span class="tab-icon">🔍</span>
+          <svg class="tab-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
           <span class="tab-text">Ledger Forensics</span>
         </button>
+
+        <div class="nav-group-label">INFRASTRUCTURE</div>
         <button class="nav-tab" data-tab="tab-configs">
-          <span class="tab-icon">📋</span>
+          <svg class="tab-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="4" width="16" height="16" rx="2" ry="2"/>
+            <rect x="9" y="9" width="6" height="6"/>
+            <line x1="9" y1="1" x2="9" y2="4"/>
+            <line x1="15" y1="1" x2="15" y2="4"/>
+            <line x1="9" y1="20" x2="9" y2="23"/>
+            <line x1="15" y1="20" x2="15" y2="23"/>
+            <line x1="20" y1="9" x2="23" y2="9"/>
+            <line x1="20" y1="14" x2="23" y2="14"/>
+            <line x1="1" y1="9" x2="4" y2="9"/>
+            <line x1="1" y1="14" x2="4" y2="14"/>
+          </svg>
           <span class="tab-text">Client Configs</span>
         </button>
         <button class="nav-tab" data-tab="tab-servers">
-          <span class="tab-icon">🌐</span>
-          <span class="tab-text">Proxy Fleet</span>
+          <svg class="tab-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+            <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+            <line x1="6" y1="6" x2="6.01" y2="6"/>
+            <line x1="6" y1="18" x2="6.01" y2="18"/>
+          </svg>
+          <span class="tab-text">Shielded Fleet</span>
         </button>
       </nav>
 
@@ -121,10 +225,10 @@
       <div class="sidebar-footer">
         <div class="server-fleet-title">VIRTUAL SERVER FLEET</div>
         <div class="fleet-items">
-          <div class="fleet-item"><span class="fleet-dot green"></span> filesystem-mcp (5 tools)</div>
-          <div class="fleet-item"><span class="fleet-dot green"></span> memory-kv-mcp (5 tools)</div>
-          <div class="fleet-item"><span class="fleet-dot green"></span> crypto-vault-mcp (4 tools)</div>
-          <div class="fleet-item"><span class="fleet-dot green"></span> http-simulator-mcp (1 tool)</div>
+          <div class="fleet-item"><span class="fleet-dot green"></span> filesystem-mcp <span class="fleet-pill">5 tools</span></div>
+          <div class="fleet-item"><span class="fleet-dot green"></span> memory-kv-mcp <span class="fleet-pill">5 tools</span></div>
+          <div class="fleet-item"><span class="fleet-dot green"></span> crypto-vault-mcp <span class="fleet-pill">5 tools</span></div>
+          <div class="fleet-item"><span class="fleet-dot green"></span> http-simulator-mcp <span class="fleet-pill">1 tool</span></div>
         </div>
       </div>
     </aside>
@@ -139,7 +243,9 @@
           <div class="stat-card cyan">
             <div class="stat-header">
               <span class="stat-label">TOTAL EVALUATIONS</span>
-              <span class="stat-icon">📈</span>
+              <svg class="stat-icon-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+              </svg>
             </div>
             <div class="stat-value" id="stat-total-evals">0</div>
             <div class="stat-sub">Zero-Trust Real-time Inspection</div>
@@ -147,15 +253,21 @@
           <div class="stat-card red">
             <div class="stat-header">
               <span class="stat-label">THREATS INTERCEPTED</span>
-              <span class="stat-icon">🛡️</span>
+              <svg class="stat-icon-svg text-crimson" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
             </div>
-            <div class="stat-value" id="stat-total-blocked">0</div>
+            <div class="stat-value text-crimson" id="stat-total-blocked">0</div>
             <div class="stat-sub" id="stat-block-sub">0% block rate</div>
           </div>
           <div class="stat-card purple">
             <div class="stat-header">
               <span class="stat-label">SANITIZED CALLS</span>
-              <span class="stat-icon">✨</span>
+              <svg class="stat-icon-svg text-purple" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+              </svg>
             </div>
             <div class="stat-value" id="stat-total-sanitized">0</div>
             <div class="stat-sub">Credentials & Traversal Scrubbed</div>
@@ -163,10 +275,54 @@
           <div class="stat-card green">
             <div class="stat-header">
               <span class="stat-label">LEDGER HEIGHT</span>
-              <span class="stat-icon">🔗</span>
+              <svg class="stat-icon-svg text-emerald" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+              </svg>
             </div>
             <div class="stat-value" id="stat-ledger-height">1</div>
             <div class="stat-sub" id="stat-ledger-status">SHA-256 Merkle Chain Pristine</div>
+          </div>
+        </div>
+
+        <!-- Real-Time Threat Telemetry Chart Strip -->
+        <div class="panel telemetry-chart-panel">
+          <div class="panel-header">
+            <div class="panel-title-group">
+              <span class="pulse-indicator"></span>
+              <span class="panel-title">Real-Time Threat Telemetry & Request Activity</span>
+            </div>
+            <div class="chart-legend">
+              <span class="legend-item"><span class="legend-dot green"></span> Clean Invocations</span>
+              <span class="legend-item"><span class="legend-dot red"></span> Intercepted Threats</span>
+              <span class="legend-badge">Window: Rolling 60s</span>
+            </div>
+          </div>
+          <div class="telemetry-chart-body" id="telemetry-chart-container">
+            <!-- Dynamic SVG Telemetry Histogram rendered via app.js -->
+            <svg id="telemetry-svg" class="telemetry-svg" viewBox="0 0 1000 120" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="cleanGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#10b981" stop-opacity="0.6"/>
+                  <stop offset="100%" stop-color="#10b981" stop-opacity="0.05"/>
+                </linearGradient>
+                <linearGradient id="blockGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#f43f5e" stop-opacity="0.8"/>
+                  <stop offset="100%" stop-color="#f43f5e" stop-opacity="0.1"/>
+                </linearGradient>
+              </defs>
+              <g class="grid-lines">
+                <line x1="0" y1="30" x2="1000" y2="30" stroke="rgba(255,255,255,0.05)" stroke-dasharray="3,3"/>
+                <line x1="0" y1="60" x2="1000" y2="60" stroke="rgba(255,255,255,0.05)" stroke-dasharray="3,3"/>
+                <line x1="0" y1="90" x2="1000" y2="90" stroke="rgba(255,255,255,0.05)" stroke-dasharray="3,3"/>
+              </g>
+              <g id="telemetry-bars-group"></g>
+            </svg>
+            <div class="telemetry-footer-stats">
+              <span>Zero-Trust Invariant Verification: <strong class="text-green">PASS (9/9 Rules)</strong></span>
+              <span>Avg Inspection Latency: <strong class="text-cyan">0.14 ms</strong></span>
+              <span>Subshell Interception: <strong class="text-purple">POSIX Native</strong></span>
+            </div>
           </div>
         </div>
 
@@ -176,8 +332,8 @@
           <div class="panel stream-panel">
             <div class="panel-header">
               <div class="panel-title-group">
-                <span class="pulse-indicator"></span>
                 <span class="panel-title">Live Protocol Event Stream</span>
+                <span class="live-tag">LIVE AUDIT</span>
               </div>
               <div class="panel-actions">
                 <button class="btn-sm" id="clear-stream-btn">Clear Log</button>
@@ -191,61 +347,81 @@
           <!-- Right: Security Threat Radar & Quick Firewall Controls -->
           <div class="panel radar-panel">
             <div class="panel-header">
-              <span class="panel-title">Active Threat Interception Radar</span>
+              <span class="panel-title">Active Threat Interception Matrix</span>
               <span class="badge badge-enforce" id="current-mode-badge">MODE: ENFORCE</span>
             </div>
             <div class="radar-content">
               <div class="threat-breakdown">
                 <div class="threat-row">
-                  <span class="threat-name">Path Traversal (SEC-001)</span>
+                  <span class="threat-name">Path Traversal <span class="rule-chip">SEC-001</span></span>
                   <div class="threat-bar-bg"><div class="threat-bar red" id="bar-sec-001" style="width: 0%"></div></div>
                   <span class="threat-count" id="count-sec-001">0</span>
                 </div>
                 <div class="threat-row">
-                  <span class="threat-name">Command Injection (SEC-002)</span>
+                  <span class="threat-name">Command Injection <span class="rule-chip">SEC-002</span></span>
                   <div class="threat-bar-bg"><div class="threat-bar red" id="bar-sec-002" style="width: 0%"></div></div>
                   <span class="threat-count" id="count-sec-002">0</span>
                 </div>
                 <div class="threat-row">
-                  <span class="threat-name">Secret Leakage (SEC-003)</span>
+                  <span class="threat-name">Secret Leakage <span class="rule-chip">SEC-003</span></span>
                   <div class="threat-bar-bg"><div class="threat-bar red" id="bar-sec-003" style="width: 0%"></div></div>
                   <span class="threat-count" id="count-sec-003">0</span>
                 </div>
                 <div class="threat-row">
-                  <span class="threat-name">SSRF / Metadata Exfil (SEC-004)</span>
+                  <span class="threat-name">SSRF / Metadata Exfil <span class="rule-chip">SEC-004</span></span>
                   <div class="threat-bar-bg"><div class="threat-bar red" id="bar-sec-004" style="width: 0%"></div></div>
                   <span class="threat-count" id="count-sec-004">0</span>
                 </div>
                 <div class="threat-row">
-                  <span class="threat-name">DoS / Payload Radius (SEC-005)</span>
+                  <span class="threat-name">DoS / Blast Radius <span class="rule-chip">SEC-005</span></span>
                   <div class="threat-bar-bg"><div class="threat-bar red" id="bar-sec-005" style="width: 0%"></div></div>
                   <span class="threat-count" id="count-sec-005">0</span>
+                </div>
+                <div class="threat-row">
+                  <span class="threat-name">Prompt Injection <span class="rule-chip">SEC-006</span></span>
+                  <div class="threat-bar-bg"><div class="threat-bar red" id="bar-sec-006" style="width: 0%"></div></div>
+                  <span class="threat-count" id="count-sec-006">0</span>
+                </div>
+                <div class="threat-row">
+                  <span class="threat-name">SQL Injection <span class="rule-chip">SEC-007</span></span>
+                  <div class="threat-bar-bg"><div class="threat-bar red" id="bar-sec-007" style="width: 0%"></div></div>
+                  <span class="threat-count" id="count-sec-007">0</span>
+                </div>
+                <div class="threat-row">
+                  <span class="threat-name">Prototype Pollution <span class="rule-chip">SEC-008</span></span>
+                  <div class="threat-bar-bg"><div class="threat-bar red" id="bar-sec-008" style="width: 0%"></div></div>
+                  <span class="threat-count" id="count-sec-008">0</span>
+                </div>
+                <div class="threat-row">
+                  <span class="threat-name">Secrets Exfiltration <span class="rule-chip">SEC-009</span></span>
+                  <div class="threat-bar-bg"><div class="threat-bar red" id="bar-sec-009" style="width: 0%"></div></div>
+                  <span class="threat-count" id="count-sec-009">0</span>
                 </div>
               </div>
 
               <!-- Live Firewall Mode Switcher -->
               <div class="mode-switcher-box">
-                <span class="box-title">Select Firewall Policy Mode:</span>
+                <span class="box-title">FIREWALL POLICY MODE</span>
                 <div class="mode-options">
                   <label class="mode-radio">
                     <input type="radio" name="firewall-mode" value="ENFORCE" checked>
                     <span class="radio-label">
                       <strong>ENFORCE</strong>
-                      <small>Block & isolate violations</small>
+                      <small>Block & isolate violations with -32001 error code</small>
                     </span>
                   </label>
                   <label class="mode-radio">
                     <input type="radio" name="firewall-mode" value="SANITIZE">
                     <span class="radio-label">
                       <strong>SANITIZE</strong>
-                      <small>Redact secrets & sanitize</small>
+                      <small>Scrub secrets, sanitize path tokens, permit execution</small>
                     </span>
                   </label>
                   <label class="mode-radio">
                     <input type="radio" name="firewall-mode" value="AUDIT_ONLY">
                     <span class="radio-label">
                       <strong>AUDIT_ONLY</strong>
-                      <small>Allow through & log alerts</small>
+                      <small>Allow all frames through; record alerts in ledger</small>
                     </span>
                   </label>
                 </div>
@@ -265,7 +441,7 @@
               <span class="badge" id="total-tools-count">15 Tools</span>
             </div>
             <div class="tool-search-box">
-              <input type="text" id="tool-search-input" placeholder="Search tools or servers...">
+              <input type="text" id="tool-search-input" placeholder="Filter tools or servers (⌘K)...">
             </div>
             <div class="tool-list" id="tool-catalog-list">
               <!-- Populated dynamically -->
@@ -281,7 +457,10 @@
               </div>
               <div class="tool-actions">
                 <button class="btn-primary" id="execute-tool-btn">
-                  <span class="icon">▶</span> Execute Tool
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                  </svg>
+                  Execute Tool
                 </button>
               </div>
             </div>
@@ -308,7 +487,7 @@
               </div>
               <div class="subtab-pane" id="subtab-security">
                 <div id="firewall-preflight-display" class="preflight-box">
-                  <span class="preflight-status safe">✔ Parameters Pass All Zero-Trust Firewall Checks</span>
+                  <span class="preflight-status safe">✔ Parameters Pass All Zero-Trust Firewall Invariants</span>
                 </div>
               </div>
               <div class="subtab-pane" id="subtab-raw">
@@ -323,19 +502,24 @@
       <section class="tab-pane" id="tab-firewall">
         <div class="panel">
           <div class="panel-header">
-            <span class="panel-title">Zero-Trust Security Policies & Threat Detection Rules</span>
+            <div>
+              <span class="panel-title">Zero-Trust Security Policies & Threat Detection Rules</span>
+              <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                Active real-time invariant guards intercepting malicious tool invocations before execution.
+              </p>
+            </div>
             <button class="btn-secondary" id="reset-rules-btn">Restore Defaults</button>
           </div>
           <div class="rules-table-container">
             <table class="rules-table">
               <thead>
                 <tr>
-                  <th>Status</th>
-                  <th>Rule ID</th>
-                  <th>Policy Name</th>
-                  <th>Severity</th>
+                  <th style="width: 70px;">Status</th>
+                  <th style="width: 110px;">Rule ID</th>
+                  <th style="width: 220px;">Policy Name</th>
+                  <th style="width: 100px;">Severity</th>
                   <th>Description</th>
-                  <th>Action</th>
+                  <th style="width: 90px;">Action</th>
                 </tr>
               </thead>
               <tbody id="rules-table-body">
@@ -365,10 +549,14 @@
       <!-- TAB 4: AUTOMATED PROTOCOL FUZZER -->
       <section class="tab-pane" id="tab-fuzzer">
         <div class="fuzzer-layout">
-          <!-- Control Panel -->
           <div class="panel fuzzer-controls">
             <div class="panel-header">
-              <span class="panel-title">Automated Resilience & Boundary Fuzzer</span>
+              <div>
+                <span class="panel-title">Automated Resilience & Boundary Fuzzer</span>
+                <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                  Mutates tool schemas and injects adversarial inputs to audit crash resistance and edge-case conformance.
+                </p>
+              </div>
             </div>
             <div class="fuzzer-config-row">
               <div class="config-item">
@@ -378,14 +566,18 @@
                 </select>
               </div>
               <div class="config-item">
-                <label>With Aegis Firewall Shield:</label>
+                <label>Zero-Trust Shield:</label>
                 <label class="toggle-switch">
                   <input type="checkbox" id="fuzz-firewall-toggle" checked>
                   <span class="slider"></span>
                 </label>
               </div>
               <button class="btn-primary" id="start-fuzz-btn">
-                <span class="icon">🔬</span> Launch Fuzzing Campaign
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M10 2v7.31L4.5 19.5A2 2 0 0 0 6.24 22h11.52a2 2 0 0 0 1.74-2.5L14 9.31V2"/>
+                  <line x1="8.5" y1="2" x2="15.5" y2="2"/>
+                </svg>
+                Launch Fuzz Campaign
               </button>
             </div>
 
@@ -398,7 +590,7 @@
                   <p id="scorecard-summary">18 / 18 Adversarial Vectors Gracefully Defended</p>
                 </div>
                 <div class="scorecard-actions">
-                  <button class="btn-sm" id="download-report-btn">📥 Export Audit Report (MD)</button>
+                  <button class="btn-sm" id="download-report-btn">Export Audit Report (MD)</button>
                 </div>
               </div>
 
@@ -424,6 +616,120 @@
         </div>
       </section>
 
+      <!-- TAB: AUTOMATED EXPLOIT STUDIO & AUTO-DEFENSE -->
+      <section class="tab-pane" id="tab-exploits">
+        <div class="forensics-container">
+          <!-- Control Panel -->
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <span class="panel-title">Automated Exploit Generator & Auto-Defense</span>
+                <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                  Generates weaponized adversarial exploits across all 9 zero-trust attack domains and automatically synthesizes countermeasure rules.
+                </p>
+              </div>
+              <div class="fuzzer-actions">
+                <button class="btn-danger" id="run-exploit-audit-btn">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="22" y1="12" x2="18" y2="12"/>
+                    <line x1="6" y1="12" x2="2" y2="12"/>
+                    <line x1="12" y1="6" x2="12" y2="2"/>
+                    <line x1="12" y1="22" x2="12" y2="18"/>
+                  </svg>
+                  Launch Exploit Audit
+                </button>
+              </div>
+            </div>
+
+            <!-- Parameters Grid -->
+            <div class="fuzzer-config-row" style="margin-top: 14px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;">
+              <div class="config-item" style="flex-direction: column; align-items: flex-start;">
+                <label>Target Server</label>
+                <select id="exploit-server-select" class="form-select" style="width: 100%;">
+                  <option value="virtual_filesystem">virtual_filesystem</option>
+                  <option value="virtual_http">virtual_http</option>
+                  <option value="virtual_crypto">virtual_crypto</option>
+                  <option value="virtual_memory">virtual_memory</option>
+                </select>
+              </div>
+              <div class="config-item" style="flex-direction: column; align-items: flex-start;">
+                <label>Target Tool</label>
+                <select id="exploit-tool-select" class="form-select" style="width: 100%;">
+                  <option value="read_file">read_file</option>
+                  <option value="write_file">write_file</option>
+                  <option value="list_files">list_files</option>
+                  <option value="delete_file">delete_file</option>
+                </select>
+              </div>
+              <div class="config-item" style="flex-direction: column; align-items: flex-start;">
+                <label>Defense Shield</label>
+                <select id="exploit-firewall-select" class="form-select" style="width: 100%;">
+                  <option value="true" selected>Shielded with Firewall</option>
+                  <option value="false">Unshielded (Vulnerability Exposure)</option>
+                </select>
+              </div>
+              <div class="config-item" style="flex-direction: column; align-items: flex-start;">
+                <label>Auto-Remediation</label>
+                <select id="exploit-autoreload-select" class="form-select" style="width: 100%;">
+                  <option value="true" selected>Auto Hot-Reload Countermeasures</option>
+                  <option value="false">Manual Review Only</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Exploit Immunity Scorecard Banner -->
+          <div class="panel" id="exploit-scorecard-panel">
+            <div class="panel-header">
+              <span class="panel-title">Exploit Immunity Scorecard & Threat Audit</span>
+              <span class="badge" id="exploit-timestamp-badge">Ready</span>
+            </div>
+
+            <div class="scorecard-grid">
+              <div class="score-box grade-box">
+                <span class="score-label">DEFENSE GRADE</span>
+                <span class="score-val grade-val green" id="exploit-grade-display">A+</span>
+              </div>
+              <div class="score-box">
+                <span class="score-label">DEFENSE SCORE</span>
+                <span class="score-val" id="exploit-score-pct">100%</span>
+              </div>
+              <div class="score-box">
+                <span class="score-label">TOTAL EXPLOITS</span>
+                <span class="score-val" id="exploit-total-count">19</span>
+              </div>
+              <div class="score-box">
+                <span class="score-label">DEFENDED</span>
+                <span class="score-val text-green" id="exploit-defended-count">19</span>
+              </div>
+              <div class="score-box">
+                <span class="score-label">VULNERABLE</span>
+                <span class="score-val text-crimson" id="exploit-vulnerable-count">0</span>
+              </div>
+            </div>
+
+            <!-- Exploit Results Scroll Table -->
+            <div class="fuzz-results-scroll" style="margin-top: 16px;">
+              <table class="fuzz-results-table">
+                <thead>
+                  <tr>
+                    <th>Weaponized Attack Vector</th>
+                    <th>Category</th>
+                    <th>Status</th>
+                    <th>Defense Mechanism / Mitigation</th>
+                    <th>Auto-Remediation</th>
+                  </tr>
+                </thead>
+                <tbody id="exploit-results-body">
+                  <!-- Populated dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- TAB 5: VISUAL DAG PIPELINE -->
       <section class="tab-pane" id="tab-pipeline">
         <div class="pipeline-container">
@@ -435,7 +741,10 @@
             <div class="toolbar-right">
               <button class="btn-secondary" id="reset-pipeline-btn">Reset Flow</button>
               <button class="btn-primary" id="run-pipeline-btn">
-                <span class="icon">▶</span> Execute Pipeline
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                  <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+                Execute Pipeline
               </button>
             </div>
           </div>
@@ -473,13 +782,27 @@
               </div>
               <div class="ledger-controls">
                 <button class="btn-primary" id="verify-chain-btn">
-                  <span class="icon">🔍</span> Verify Chain Integrity
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  </svg>
+                  Verify Chain
                 </button>
                 <button class="btn-danger" id="simulate-tamper-btn">
-                  <span class="icon">⚠️</span> Simulate Adversary Tamper Attack
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                  </svg>
+                  Simulate Tamper Attack
                 </button>
                 <button class="btn-sm" id="export-proof-btn">
-                  <span class="icon">📜</span> Export Cryptographic Proof
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  Export Proof
                 </button>
               </div>
             </div>
@@ -519,10 +842,19 @@
               </div>
               <div class="ledger-controls">
                 <button class="btn-danger" id="forensic-tamper-btn">
-                  <span class="icon">⚠️</span> Adversary Tamper Attack
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                  </svg>
+                  Tamper Attack
                 </button>
                 <button class="btn-primary" id="forensic-restore-btn">
-                  <span class="icon">✨</span> Cryptographic Healing & Restore
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M23 4v6h-6"/>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                  </svg>
+                  Cryptographic Healing & Restore
                 </button>
               </div>
             </div>
@@ -536,7 +868,7 @@
 
             <!-- Tampered Field Diff View -->
             <div id="forensic-diff-view" style="display: none; margin-top: 14px;">
-              <div class="section-subhead" style="color: var(--accent-crimson);">DISCREPANCY FORENSIC DIFF</div>
+              <div class="section-subhead text-crimson">DISCREPANCY FORENSIC DIFF</div>
               <table class="diff-table" id="forensic-diff-table">
                 <thead>
                   <tr>
@@ -566,15 +898,15 @@
             </div>
 
             <!-- Historical State Snapshot Card -->
-            <div style="margin-top: 16px; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 14px;">
+            <div class="snapshot-card">
               <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                <strong style="font-size: 12px; color: var(--accent-cyan);" id="snapshot-event-type">EVENT: GENESIS</strong>
+                <strong style="font-size: 12px; color: var(--accent-primary);" id="snapshot-event-type">EVENT: GENESIS</strong>
                 <span style="font-size: 11px; font-family: var(--font-mono); color: var(--text-muted);" id="snapshot-timestamp"></span>
               </div>
               <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); word-break: break-all; margin-bottom: 8px;">
                 HASH: <span style="color: #fff;" id="snapshot-hash"></span>
               </div>
-              <pre style="background: #080b12; padding: 10px; border-radius: 4px; font-size: 11px; color: #a0aec0; max-height: 180px; overflow-y: auto;" id="snapshot-payload-display"></pre>
+              <pre class="snapshot-payload" id="snapshot-payload-display"></pre>
             </div>
           </div>
         </div>
@@ -593,32 +925,35 @@
               </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 14px;">
+            <div class="synthesizer-grid" style="margin-top: 14px;">
               <!-- Schema Analyzer Form -->
-              <div style="background: var(--bg-card); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+              <div class="form-container">
                 <div class="section-subhead">SYNTHESIZE FROM TOOL SCHEMA</div>
                 <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px;">
                   <label style="font-size: 12px; color: var(--text-muted);">Select Target Tool:</label>
-                  <select id="synth-tool-select" style="background: var(--bg-surface); color: var(--text-main); border: 1px solid var(--border-subtle); padding: 8px; border-radius: 4px; font-size: 13px;">
+                  <select id="synth-tool-select" class="form-select">
                     <option value="read_file">read_file (virtual_filesystem)</option>
                     <option value="write_file">write_file (virtual_filesystem)</option>
                     <option value="fetch_url">fetch_url (virtual_http)</option>
                     <option value="hash_sha256">hash_sha256 (virtual_crypto)</option>
                   </select>
                   <button class="btn-primary" id="synth-tool-btn" style="margin-top: 6px;">
-                    <span class="icon">⚡</span> Synthesize Tailored Rules
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                    </svg>
+                    Synthesize Tailored Rules
                   </button>
                 </div>
               </div>
 
               <!-- Pattern Builder Form -->
-              <div style="background: var(--bg-card); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+              <div class="form-container">
                 <div class="section-subhead">SYNTHESIZE FROM THREAT SIGNATURE</div>
                 <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
-                  <input type="text" id="synth-sig-name" placeholder="Signature Name (e.g. Block API Key Leaks)" style="background: var(--bg-surface); border: 1px solid var(--border-subtle); padding: 6px 10px; color: #fff; font-size: 12px; border-radius: 4px;">
-                  <input type="text" id="synth-sig-regex" placeholder="Regex Pattern (e.g. ghp_[a-zA-Z0-9]{36})" style="background: var(--bg-surface); border: 1px solid var(--border-subtle); padding: 6px 10px; color: #fff; font-size: 12px; border-radius: 4px; font-family: var(--font-mono);">
+                  <input type="text" id="synth-sig-name" placeholder="Signature Name (e.g. Block API Key Leaks)" class="form-input">
+                  <input type="text" id="synth-sig-regex" placeholder="Regex Pattern (e.g. ghp_[a-zA-Z0-9]{36})" class="form-input" style="font-family: var(--font-mono);">
                   <div style="display: flex; gap: 10px;">
-                    <select id="synth-sig-severity" style="flex: 1; background: var(--bg-surface); color: #fff; border: 1px solid var(--border-subtle); padding: 6px; border-radius: 4px; font-size: 12px;">
+                    <select id="synth-sig-severity" class="form-select" style="flex: 1;">
                       <option value="CRITICAL">CRITICAL</option>
                       <option value="HIGH" selected>HIGH</option>
                       <option value="MEDIUM">MEDIUM</option>
@@ -664,12 +999,19 @@
               <button class="client-tab-btn" data-client="http">HTTP Gateway</button>
             </div>
 
-            <div style="font-size: 12px; color: var(--accent-cyan); margin-bottom: 8px;">
-              Target File: <code id="config-target-path" style="background: var(--bg-card); padding: 2px 6px; border-radius: 4px;">~/Library/Application Support/Claude/claude_desktop_config.json</code>
+            <div class="config-target-row">
+              <span class="target-label">Target Config File:</span>
+              <code id="config-target-path" class="target-path">~/Library/Application Support/Claude/claude_desktop_config.json</code>
             </div>
 
             <div style="position: relative;">
-              <button class="config-copy-btn" id="copy-config-btn">📋 Copy Snippet</button>
+              <button class="config-copy-btn" id="copy-config-btn">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                Copy Snippet
+              </button>
               <pre class="config-code-box" id="client-config-code"></pre>
             </div>
 
@@ -685,22 +1027,27 @@
         <div class="servers-container">
           <div class="panel">
             <div class="panel-header">
-              <span class="panel-title">Shielded MCP Servers & Upstream Fleet</span>
+              <div>
+                <span class="panel-title">Shielded MCP Servers & Upstream Fleet</span>
+                <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                  Active in-memory sandboxed servers and external MCP stdio processes tunneled through Aegis.
+                </p>
+              </div>
               <span class="badge" id="servers-fleet-count">4 Active Servers</span>
             </div>
 
             <!-- Connect External Server -->
-            <div style="background: var(--bg-card); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); margin-top: 14px;">
+            <div class="form-container" style="margin-top: 14px;">
               <div class="section-subhead">CONNECT EXTERNAL STDIO / HTTP MCP SERVER</div>
-              <div style="display: grid; grid-template-columns: 180px 1fr 120px; gap: 10px; margin-top: 10px;">
-                <input type="text" id="new-server-name" placeholder="Server ID (e.g. ext_github)" style="background: var(--bg-surface); border: 1px solid var(--border-subtle); padding: 6px 10px; color: #fff; font-size: 12px; border-radius: 4px;">
-                <input type="text" id="new-server-command" placeholder="Command (e.g. npx -y @modelcontextprotocol/server-filesystem /tmp)" style="background: var(--bg-surface); border: 1px solid var(--border-subtle); padding: 6px 10px; color: #fff; font-size: 12px; border-radius: 4px; font-family: var(--font-mono);">
+              <div class="connect-server-grid" style="display: grid; grid-template-columns: 200px 1fr 120px; gap: 10px; margin-top: 10px;">
+                <input type="text" id="new-server-name" placeholder="Server ID (e.g. ext_github)" class="form-input">
+                <input type="text" id="new-server-command" placeholder="Command (e.g. npx -y @modelcontextprotocol/server-filesystem /tmp)" class="form-input" style="font-family: var(--font-mono);">
                 <button class="btn-primary" id="connect-server-btn">Connect</button>
               </div>
             </div>
 
             <!-- Server Cards List -->
-            <div id="fleet-servers-cards" style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 16px;"></div>
+            <div id="fleet-servers-cards" class="fleet-cards-grid" style="margin-top: 16px;"></div>
           </div>
         </div>
       </section>

@@ -12,6 +12,58 @@ const http = require('node:http');
 const https = require('node:https');
 const { PROTOCOL_VERSION, createRequest, parseMessage } = require('../protocol/jsonrpc');
 
+/**
+ * Robust shell command tokenizer that preserves quoted arguments with whitespace.
+ */
+function tokenizeCommand(cmdStr) {
+  if (!cmdStr || typeof cmdStr !== 'string') return [];
+  const tokens = [];
+  let current = '';
+  let inDouble = false;
+  let inSingle = false;
+  let escaped = false;
+
+  for (let i = 0; i < cmdStr.length; i++) {
+    const ch = cmdStr[i];
+
+    if (escaped) {
+      current += ch;
+      escaped = false;
+      continue;
+    }
+
+    if (ch === '\\' && !inSingle) {
+      escaped = true;
+      continue;
+    }
+
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble;
+      continue;
+    }
+
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle;
+      continue;
+    }
+
+    if (/\s/.test(ch) && !inDouble && !inSingle) {
+      if (current.length > 0) {
+        tokens.push(current);
+        current = '';
+      }
+    } else {
+      current += ch;
+    }
+  }
+
+  if (current.length > 0) {
+    tokens.push(current);
+  }
+
+  return tokens;
+}
+
 class ExternalProcessServer {
   /**
    * @param {object} options
@@ -61,8 +113,8 @@ class ExternalProcessServer {
         let cmd = this.command;
         let cmdArgs = [...this.args];
         if (cmdArgs.length === 0 && cmd.includes(' ')) {
-          const parts = cmd.split(/\s+/);
-          cmd = parts[0];
+          const parts = tokenizeCommand(cmd);
+          cmd = parts[0] || this.command;
           cmdArgs = parts.slice(1);
         }
 
@@ -327,5 +379,6 @@ class ExternalProcessServer {
 }
 
 module.exports = {
-  ExternalProcessServer
+  ExternalProcessServer,
+  tokenizeCommand
 };

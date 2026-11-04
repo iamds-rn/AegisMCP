@@ -73,7 +73,27 @@ function runForensicsTests() {
   assert.strictEqual(restoreAllResult.restoredCount, 2, 'Should restore both tampered blocks');
   assert(restoreAllResult.verification.valid, 'Chain must be pristine after restoreAll()');
 
-  console.log('✅ Time-Travel Forensics & Tamper Localization: All 6 test cases passed!');
+  // 7. Genesis Block Tamper at Index 0
+  ledger.tamper(0, { type: 'GENESIS_ADVERSARIAL_OVERWRITE' });
+  const genReport = ledger.locateTamper();
+  assert(!genReport.intact, 'Genesis tamper must invalidate chain');
+  assert.strictEqual(genReport.tamperedIndex, 0, 'Tamper index must be 0');
+  assert.strictEqual(genReport.cascadeBlastRadius, 5, 'Blast radius must span all 5 blocks');
+  assert.deepStrictEqual(genReport.invalidatedIndices, [0, 1, 2, 3, 4]);
+  ledger.restoreAll();
+  assert(ledger.verify().valid, 'Chain restored after genesis heal');
+
+  // 8. Empty Chain Forensics Safety Check
+  const emptyLedger = new AuditLedger();
+  emptyLedger.chain = [];
+  const emptyReport = emptyLedger.locateTamper();
+  assert(!emptyReport.intact, 'Empty chain must not report intact');
+  assert.strictEqual(emptyReport.tamperedIndex, -1);
+  assert.strictEqual(emptyReport.cascadeBlastRadius, 0);
+  assert.deepStrictEqual(emptyReport.invalidatedIndices, []);
+  assert(emptyReport.forensicSummary.includes('empty'));
+
+  console.log('✅ Time-Travel Forensics & Tamper Localization: All 8 test cases passed!');
 }
 
 module.exports = { runForensicsTests };

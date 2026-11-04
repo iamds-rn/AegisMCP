@@ -3,7 +3,7 @@
 > **Zero-Trust Security Firewall, Resilience Fuzzer, External Stdio Tunnel, and Visual Observability Cockpit for the Model Context Protocol (MCP)**
 
 [![Protocol: MCP 2024-11-05](https://img.shields.io/badge/Protocol-MCP%202024--11--05-00f0ff.svg)](https://modelcontextprotocol.io)
-[![Tests: All Passing](https://img.shields.io/badge/Tests-73%20Assertions%20Passing-00ff9d.svg)](tests/)
+[![Tests: All Passing](https://img.shields.io/badge/Tests-95%2B%20Assertions%20Passing%20(12%20Suites)-00ff9d.svg)](tests/)
 [![Security: Zero--Trust](https://img.shields.io/badge/Security-Zero--Trust%20Firewall%20(SEC--001..009)-ff3366.svg)](docs/FIREWALL_RULES.md)
 [![Audit: Merkle Hash Chain](https://img.shields.io/badge/Audit-SHA--256%20Merkle%20Ledger-9d4edd.svg)](docs/ARCHITECTURE.md)
 [![Dependencies: 0 External](https://img.shields.io/badge/Dependencies-0%20External-blue.svg)](package.json)
@@ -28,18 +28,23 @@ However, **LLMs generate tool parameters probabilistically**. When an agent enco
 
 ---
 
-## ✨ Key Pillars & Innovations (v1.1.0)
+## ✨ Key Pillars & Innovations (v1.2.0)
 
-### 1. 🛡️ Zero-Trust Tool Firewall & Policy Engine (SEC-001 to SEC-009)
-- **Path Traversal Guard (`SEC-001`)**: Intercepts `../`, null bytes (`\x00`), and OS root escapements (`/etc/passwd`, `~/.ssh/id_rsa`, `C:\Windows\System32`).
-- **Command Injection Guard (`SEC-002`)**: Intercepts shell metacharacters (`;`, `&&`, `||`, `|`, `` `id` ``, `$(...)`) and reverse-shell redirects.
-- **Credential & Secret Leakage Guard (`SEC-003`)**: Scans parameters and responses for AWS keys (`AKIA...`), GitHub PATs (`ghp_...`), OpenAI keys (`sk-...`), Anthropic keys (`sk-ant-...`), and private keys using **Shannon Entropy analysis**.
-- **SSRF & Cloud Metadata Guard (`SEC-004`)**: Blocks access to loopback (`127.0.0.1`), internal subnets (`10.0.0.0/8`, `192.168.0.0/16`), and AWS/GCP metadata endpoints (`169.254.169.254`).
-- **DoS / Blast Radius Guard (`SEC-005`)**: Enforces payload size, JSON nesting depth, and element count constraints.
-- **Prompt Injection & Hijacking Guard (`SEC-006`)**: Blocks instruction overrides (`ignore previous instructions`), roleplay exploits (`DAN mode`), marker injections (`[INST]`, `<|im_start|>`), and hidden character bypasses (BiDi RTL, zero-width spaces).
-- **SQL & Query Injection Guard (`SEC-007`)**: Blocks SQL tautology escapes (`' OR '1'='1`), stacked queries (`DROP TABLE`), comment truncations, and stored procedures (`xp_cmdshell`).
-- **Prototype Pollution Guard (`SEC-008`)**: Intercepts `__proto__`, `constructor.prototype`, and prototype mutations on parameter objects.
-- **Environment & Secrets Exfiltration Guard (`SEC-009`)**: Prevents reading `.env`, `.envrc`, AWS credentials, and shell histories.
+### 1. ⚔️ Automated Weaponized Exploit Generator & Self-Healing Auto-Defense (NEW in v1.2.0)
+- **Weaponized Exploit Library**: Evaluates tool schemas against 19 targeted exploit payloads covering 9 attack vectors (Path Traversal, Double-URL encoding, Null-byte truncation, Recon commands, Secret/JWT leaks, SSRF IPv4-mapped IPv6, Structured Prototype Pollution, Prompt Injection, and DoS buffer stress).
+- **Self-Healing Immune Loop**: When an unmitigated exploit is detected, Aegis automatically calls the `DynamicRuleSynthesizer` to author, hot-compile, and inject an immutable countermeasure rule directly into the runtime firewall engine.
+- **Exploit Studio Cockpit**: Interactive visual dashboard in the Web Studio with 1-click threat simulation, real-time exploit execution, and automated defense synthesis.
+
+### 2. 🛡️ Zero-Trust Tool Firewall & Policy Engine (SEC-001 to SEC-009)
+- **Path Traversal Guard (`SEC-001`)**: Intercepts `../`, `..\`, double URL-encoding (`%252e%252e%252f`), null byte path poisoning (`\x00`), and OS root escapements (`/etc/passwd`, `~/.ssh/id_rsa`, `C:\Windows\System32`).
+- **Command Injection Guard (`SEC-002`)**: Intercepts shell metacharacters (`;`, `&&`, `||`, `|`, `` `id` ``, `$(...)`), newlines (`\n`, `\r`), recon binaries (`whoami`, `id`, `uname`, `hostname`, `env`, `sudo`), and reverse-shell redirects.
+- **Credential & Secret Leakage Guard (`SEC-003`)**: Scans parameters and responses for AWS keys (`AKIA...`), GitHub PATs (`ghp_...`), OpenAI keys (`sk-...`), Anthropic keys (`sk-ant-...`), Google API keys (`AIza...`), Stripe secret keys (`sk_live_...`), Hugging Face tokens (`hf_...`), JWTs (`eyJ...`), and private keys using **Shannon Entropy analysis**.
+- **SSRF & Cloud Metadata Guard (`SEC-004`)**: Blocks access to loopback (`127.0.0.1`), IPv4-mapped IPv6 (`[::ffff:127.0.0.1]`, `[::ffff:7f00:1]`, `[::ffff:169.254.169.254]`), internal subnets (`10.0.0.0/8`, `192.168.0.0/16`), and AWS/GCP metadata endpoints (`169.254.169.254`).
+- **DoS / Blast Radius Guard (`SEC-005`)**: Enforces payload size (512 KB), JSON nesting depth (12 levels), and element count constraints.
+- **Prompt Injection & Hijacking Guard (`SEC-006`)**: Blocks instruction boundary overrides (`ignore previous instructions`), roleplay exploits (`DAN mode`), marker injections (`[INST]`, `<<SYS>>`, `<start_of_turn>`), and hidden character bypasses (BiDi RTL, zero-width spaces).
+- **SQL & Query Injection Guard (`SEC-007`)**: Blocks SQL tautology escapes (`' OR '1'='1`), destructive DML (`DELETE FROM`, `UPDATE ... SET`, `DROP TABLE`), blind sleep injections (`pg_sleep`, `WAITFOR DELAY`), and stored procedures (`xp_cmdshell`).
+- **Prototype Pollution Guard (`SEC-008`)**: Intercepts structured object mutations (`{ constructor: { prototype: ... } }`), `__proto__`, and prototype mutations on parameter objects.
+- **Environment & Secrets Exfiltration Guard (`SEC-009`)**: Prevents reading `.env`, `.envrc`, AWS credentials (`.aws/credentials` and `.aws\credentials`), Kubernetes configs, and shell histories.
 - **Three Operational Modes**:
   - `ENFORCE`: Immediately drops violations with standard JSON-RPC error `-32001 (AEGIS_POLICY_VIOLATION)`.
   - `SANITIZE`: Automatically scrubs secrets, neutralizes traversal sequences, and strips prototype keys before forwarding.
@@ -160,6 +165,7 @@ COMMANDS:
   --serve                      Launch Web Studio & API Gateway (Default port: 3333)
   --stdio                      Run MCP stdio proxy with active firewall protection
   --proxy <cmd>                Tunnel an external MCP server command through the firewall
+  --exploit-test <tool>        Run automated adversarial exploit audit and auto-synthesize countermeasures
   --fuzz                       Run automated protocol fuzzing audit on virtual tools
   --verify-ledger              Perform cryptographic integrity check on audit ledger
   --forensics                  Run time-travel forensics & tamper localization audit
@@ -183,7 +189,7 @@ AegisMCP is verified by a strict, zero-dependency automated test runner:
 $ npm test
 
 🛡️  ==============================================================
-    AEGIS-MCP COMPREHENSIVE AUTOMATED TEST SUITE (v1.1.0)
+    AEGIS-MCP COMPREHENSIVE AUTOMATED TEST SUITE (v1.2.0)
 ==============================================================
 
 🧪 Testing Firewall Rules & Engine...
@@ -194,14 +200,16 @@ $ npm test
   Testing adversarial tamper detection...
 ✅ Cryptographic Audit Ledger: All 10 test cases passed!
 🧪 Testing Time-Travel Ledger Forensics & Tamper Localization...
-✅ Time-Travel Forensics & Tamper Localization: All 6 test cases passed!
+✅ Time-Travel Forensics & Tamper Localization: All 8 test cases passed!
 🧪 Testing Dynamic Rule Synthesizer & Hot-Reloading...
 ✅ Dynamic Rule Synthesizer: All 6 test cases passed!
+🧪 Testing Automated Exploit Payload Generator & Resilience Auditor...
+✅ Automated Exploit Payload Generator: All 6 test cases passed!
 🧪 Testing Virtual MCP Servers...
   Testing server parameter validation invariants...
 ✅ Virtual In-Memory MCP Servers: All 4 servers passed verification!
 🧪 Testing External MCP Server stdio Proxy Tunneling...
-✅ External MCP Server stdio Proxy Tunneling: All 6 test cases passed!
+✅ External MCP Server stdio Proxy Tunneling: All 8 test cases passed!
 🧪 Testing AI Client Configuration Generator...
 ✅ Client Configuration Generator: All 7 test cases passed!
 🧪 Testing Visual DAG Pipeline Engine...
@@ -209,11 +217,11 @@ $ npm test
 🧪 Testing Protocol Fuzzer & Conformance Auditor...
 ✅ Protocol Fuzzer: All 5 test cases passed!
 🧪 Testing End-to-End Protocol & HTTP Gateway Server...
-✅ End-to-End Protocol & Gateway: All 10 test cases passed!
+✅ End-to-End Protocol & Gateway: All 15 test cases passed!
 
 🛡️  ==============================================================
-    ALL TEST SUITES PASSED! (11/11)
-    Total Duration: 0.04s
+    ALL TEST SUITES PASSED! (12/12)
+    Total Duration: 0.07s
 ==============================================================
 ```
 
@@ -230,7 +238,8 @@ AegisMCP/
 │   ├── firewall/
 │   │   ├── rules.js               # Built-in security rules (SEC-001 - SEC-009)
 │   │   ├── engine.js              # Firewall inspection, sanitization & policy engine
-│   │   └── synthesizer.js         # Dynamic schema-driven rule synthesizer
+│   │   ├── synthesizer.js         # Dynamic schema-driven rule synthesizer
+│   │   └── exploitGenerator.js    # Automated adversarial exploit payload generator & immune loop
 │   ├── ledger/
 │   │   └── auditLedger.js         # SHA-256 Merkle ledger, forensics & time-travel snapshots
 │   ├── fuzzer/
@@ -249,12 +258,13 @@ AegisMCP/
 │   ├── style.css                  # Cyberpunk obsidian design system
 │   └── app.js                     # Browser-native reactive studio & audio synthesizer
 ├── tests/
-│   ├── runner.js                  # Master test suite runner (11 suites)
+│   ├── runner.js                  # Master test suite runner (12 suites)
 │   ├── test-firewall.js           # Core firewall & entropy unit tests
 │   ├── test-new-rules.js          # Advanced rules (SEC-006 to SEC-009) tests
 │   ├── test-ledger.js             # Merkle chain integrity tests
 │   ├── test-forensics.js          # Tamper localization, blast radius & snapshot tests
 │   ├── test-synthesizer.js        # Schema analysis & hot-reloading tests
+│   ├── test-exploit-generator.js  # Adversarial exploit payload generator tests
 │   ├── test-external-server.js    # Child process stdio tunneling tests
 │   ├── mock-mcp-server.js         # Standalone external test process
 │   ├── test-config-generator.js   # Client config formatting tests
